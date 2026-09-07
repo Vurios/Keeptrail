@@ -1,7 +1,7 @@
 # Keeptrail Local Android Pilot — Build Status & Verification Report
 
-**Edition:** Free Local Android APK Pilot (Revision 8)
-**Date:** September 6, 2026
+**Edition:** Free Local Android APK Pilot (Revision 9)
+**Date:** September 7, 2026
 **Source of Truth:** `Keeptrail_Free_APK_Pilot_Blueprint.md` and `Keeptrail_Local_Storage_and_Backup_Guide.md`
 **Active Branch:** `pilot/local-free-apk`
 **Git Baseline Checkpoint:** `chore: checkpoint Katibay v2 baseline before Keeptrail local pilot migration`
@@ -10,24 +10,24 @@
 
 ## 1. Level & Storage Stage Execution Summary
 
-| Stage                   | Capability & Scope                                  | Status       | Verification Evidence & Deliverables                                                                                                                                                                                                  |
-| ----------------------- | --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **L0**                  | Inventory, Safety Checkpoint, Preservation          | **VERIFIED** | Baseline commit on `main`. Zero files deleted; all 75 existing Python backend tests pass (`pytest` 75 passed, 1 skipped). `docs/MIGRATION_AUDIT.md` created.                                                                          |
-| **L1**                  | On-Device OCR & Local Pretrained AI Architecture    | **VERIFIED** | `extractReceiptFromText` parses untrusted text, detects ambiguous dates, checks arithmetic. `AskKeeptrailEngine` implements read-only tools and honestly labeled "Basic Helper" fallback.                                             |
-| **S0**                  | Storage Audit & Durable File Lifecycle              | **VERIFIED** | Authoritative evidence saved byte-for-byte in durable app-private files with SHA-256 checksums. Cache is strictly rebuildable.                                                                                                        |
-| **S1**                  | Encryption, Indexing & Storage Controls             | **VERIFIED** | `LocalReceiptVault` manages receipts, attachments, collections, actions, and trash lifecycle. Storage usage breakdown and safe cache clearing.                                                                                        |
-| **L2**                  | Local SQLite Vault & Durable Evidence Storage       | **VERIFIED** | SQLite database schema with idempotent migrations, soft-delete Trash, and recoverable attachment associations.                                                                                                                        |
-| **S2**                  | Complete Portable Encrypted Backup (.keeptrail)     | **VERIFIED** | AES-256-GCM + PBKDF2 (100k iterations, SHA-256) encrypted container with cryptographic manifest and file hashes.                                                                                                                      |
-| **S3**                  | Restore & Backup UX                                 | **VERIFIED** | `StorageBackupScreen` shows storage stats, password entry, export/restore actions, and honest warning copy ("Keep a copy away from this phone").                                                                                      |
-| **L3**                  | Local Capture, Review & Collections UI              | **VERIFIED** | 4-tab Keeptrail UI (`HomeScreen`, `ReceiptsScreen`, `CollectionsScreen`, `RemindersScreen`), `CaptureModal` (source-above-fields review, Quick Save to private vault).                                                                |
-| **S4**                  | Local AI & Evidence Acceptance Benchmark            | **VERIFIED** | `local-ai-benchmark.test.ts` verifies read-only tools, OCR prompt injection resistance, exact minor unit math, currency segregation, cold load simulation, and cancellation.                                                          |
-| **L4**                  | Actions, Deadlines & Deterministic Calculations     | **VERIFIED** | Exact integer minor unit math (`formatMoney`, `calculateReceiptTotals`), multi-currency segregation (never blends PHP and USD), CSV formula injection sanitization.                                                                   |
-| **Visual System**       | Impeccable Design Specification (`DESIGN.md`)       | **VERIFIED** | Authored `DESIGN.md` in accordance with Impeccable skill. WCAG AA compliance (contrast >= 4.5:1), 48x48 min touch targets, zero AI slop, no gradient text, tabular numerals.                                                          |
-| **Logo**                | Brand Identity & Vector Assets (Prompt L1)          | **VERIFIED** | Created 6 vector assets in `packages/shared/brand/keeptrail/` (`icon.svg` square, `symbol.svg`, `lockup.svg`, `monochrome-black.svg`, `monochrome-white.svg`, `dark.svg`) and high-res mobile PNGs. `keeptrail-brand.test.ts` passes. |
-| **Onboarding & Splash** | Native Splash & 5-Step Onboarding (Prompt U1 & P16) | **VERIFIED** | `OnboardingModal.tsx` implements Welcome, Local Vault Notice, First Receipt, Quick Save & Review, and First Value. Native splash screen configured with `#146B55` evergreen theme.                                                    |
-| **L5**                  | Backup & Restore Verification                       | **VERIFIED** | Full roundtrip backup and restore verified against wrong passwords, corrupted headers, and tampered archives (`vault-backup.test.ts`).                                                                                                |
-| **L6**                  | Standalone Free Android APK Build                   | **VERIFIED** | Real APK compiled on EAS Build with `pilot` profile: `keeptrail-pilot-v1.0.0.apk` (68.46 MB, SHA-256: `4e1c33bed2426cb5e1bc8483a91c47acfc8da3cd41ea4255787e2bcc92f6350f`). `TESTER_GUIDE.md` created.                                 |
-| **L7 & G1**             | Delivery Documentation & Repository Delivery        | **VERIFIED** | 100% test pass rate across monorepo (57/57 Vitest tests in `packages/shared`, 75/75 pytest in `services/api`, monorepo `tsc --noEmit` 0 errors).                                                                                      |
+| Stage                   | Capability & Scope                                  | Status       | Verification Evidence & Deliverables                                                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L0**                  | Inventory, Safety Checkpoint, Preservation          | **VERIFIED** | Baseline commit on `main`. Zero files deleted; all 75 existing Python backend tests pass (`pytest` 75 passed, 1 skipped). `docs/MIGRATION_AUDIT.md` created.                                                                                 |
+| **L1**                  | On-Device OCR & Local Pretrained AI Architecture    | **VERIFIED** | `extractReceiptFromText` parses untrusted text, detects ambiguous dates, checks arithmetic. `AskKeeptrailEngine` implements read-only tools and honestly labeled "Basic Helper" fallback.                                                    |
+| **S0**                  | Storage Audit & Durable File Lifecycle              | **VERIFIED** | Authoritative evidence saved byte-for-byte in durable app-private files with SHA-256 checksums. Cache is strictly rebuildable.                                                                                                               |
+| **S1**                  | Encryption, Indexing & Storage Controls             | **VERIFIED** | `LocalReceiptVault` manages receipts, attachments, collections, actions, and trash lifecycle. Storage usage breakdown and safe cache clearing.                                                                                               |
+| **L2**                  | Local SQLite Vault & Durable Evidence Storage       | **VERIFIED** | SQLite database schema with idempotent migrations, soft-delete Trash, and recoverable attachment associations.                                                                                                                               |
+| **S2**                  | Complete Portable Encrypted Backup (.keeptrail)     | **VERIFIED** | AES-256-GCM + PBKDF2 (100k iterations, SHA-256) encrypted container with cryptographic manifest and file hashes.                                                                                                                             |
+| **S3**                  | Restore & Backup UX                                 | **VERIFIED** | `StorageBackupScreen` shows storage stats, password entry, export/restore actions, and honest warning copy ("Keep a copy away from this phone").                                                                                             |
+| **L3**                  | Local Capture, Review & Collections UI              | **VERIFIED** | 4-tab Keeptrail UI (`HomeScreen`, `ReceiptsScreen`, `CollectionsScreen`, `RemindersScreen`), `CaptureModal` (source-above-fields review, Quick Save to private vault).                                                                       |
+| **S4**                  | Local AI & Evidence Acceptance Benchmark            | **VERIFIED** | `local-ai-benchmark.test.ts` verifies read-only tools, OCR prompt injection resistance, exact minor unit math, currency segregation, cold load simulation, and cancellation.                                                                 |
+| **L4**                  | Actions, Deadlines & Deterministic Calculations     | **VERIFIED** | Exact integer minor unit math (`formatMoney`, `calculateReceiptTotals`), multi-currency segregation (never blends PHP and USD), CSV formula injection sanitization.                                                                          |
+| **Visual System**       | Impeccable Design Specification (`DESIGN.md`)       | **VERIFIED** | Authored `DESIGN.md` in accordance with Impeccable skill. WCAG AA compliance (contrast >= 4.5:1), 48x48 min touch targets, zero AI slop, no gradient text, tabular numerals.                                                                 |
+| **Logo**                | Brand Identity & Vector Assets (Prompt L1)          | **VERIFIED** | Created 6 vector assets in `packages/shared/brand/keeptrail/` (`icon.svg` square, `symbol.svg`, `lockup.svg`, `monochrome-black.svg`, `monochrome-white.svg`, `dark.svg`) and high-res mobile PNGs. `keeptrail-brand.test.ts` passes.        |
+| **Onboarding & Splash** | Native Splash & 5-Step Onboarding (Prompt U1 & P16) | **VERIFIED** | `OnboardingModal.tsx` implements Welcome, Local Vault Notice, First Receipt, Quick Save & Review, and First Value. Native splash screen configured with `#146B55` evergreen theme.                                                           |
+| **L5**                  | Backup & Restore Verification                       | **VERIFIED** | Full roundtrip backup and restore verified against wrong passwords, corrupted headers, and tampered archives (`vault-backup.test.ts`).                                                                                                       |
+| **L6**                  | Standalone Free Android APK Build (v1.0.1 Redeploy) | **VERIFIED** | Real APK compiled on EAS Build with `pilot` profile: `keeptrail-pilot-v1.0.1.apk` (68.49 MB, SHA-256: `92d94629a5e356667bbb82c0480a78f806a1e6bd230a69000238e432559a437c`). In-place upgrade verified over v1.0.0. `TESTER_GUIDE.md` updated. |
+| **L7 & G1**             | Delivery Documentation & Repository Delivery        | **VERIFIED** | 100% test pass rate across monorepo (64/64 Vitest tests: 57 in `packages/shared` + 7 in `apps/mobile`, 75/75 pytest in `services/api`, monorepo `tsc --noEmit` 0 errors, ESLint 0 errors).                                                   |
 
 ---
 
@@ -67,13 +67,14 @@ apps/web: Done (0 errors)
 
 ### Standalone Release Android APK Artifact
 
-- **File:** `dist/keeptrail-pilot-v1.0.0.apk`
-- **Size:** 68,461,096 bytes (65.28 MB)
+- **File:** `dist/keeptrail-pilot-v1.0.1.apk`
+- **Size:** 68,487,232 bytes (65.31 MB)
 - **Package ID:** `com.keeptrail.app`
-- **Version:** `1.0.0` (versionCode `1`)
-- **SHA-256 Checksum:** `4e1c33bed2426cb5e1bc8483a91c47acfc8da3cd41ea4255787e2bcc92f6350f`
-- **Direct Download Link:** https://expo.dev/artifacts/eas/w_rSa75OdxOcOIWq60kJdDcghIcnx53es5XLCjmRF8I.apk
-- **EAS Build Details:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/b58da297-8bee-442a-a535-3207bfcddc28
+- **Version:** `1.0.1` (versionCode `2`)
+- **SHA-256 Checksum:** `92d94629a5e356667bbb82c0480a78f806a1e6bd230a69000238e432559a437c`
+- **Signing Key Digest:** `0e6d61b38c76b6f39ae8b83cfc9b0fb81819ff03f26d34ebe2d6470421f03b43` (EAS managed Android key)
+- **Direct Download Link:** https://expo.dev/artifacts/eas/BXWWLp4ZTMHgKbqaxOXw8XZrS3Sv476jxoJemvpzhEE.apk
+- **EAS Build Details:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/c270bea5-8c47-4fce-96b5-813be6412343
 
 ---
 
