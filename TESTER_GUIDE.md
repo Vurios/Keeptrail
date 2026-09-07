@@ -2,12 +2,12 @@
 
 **App:** Keeptrail
 **Package ID:** `com.keeptrail.app`
-**Version:** `1.0.1` (versionCode `2`)
+**Version:** `1.0.2` (versionCode `3`)
 **Build Profile:** `pilot` (standalone internal distribution)
-**APK Filename:** `keeptrail-pilot-v1.0.1.apk`
-**SHA-256 Checksum:** `92d94629a5e356667bbb82c0480a78f806a1e6bd230a69000238e432559a437c`
-**Direct Download Link:** https://expo.dev/artifacts/eas/BXWWLp4ZTMHgKbqaxOXw8XZrS3Sv476jxoJemvpzhEE.apk
-**Public Build Page:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/c270bea5-8c47-4fce-96b5-813be6412343
+**APK Filename:** `keeptrail-pilot-v1.0.2.apk`
+**SHA-256 Checksum:** `ebe08ec6d5218e719ae02ac2af5c0f1b8223092a3158eca6cd029e780ab09a1a`
+**Direct Download Link:** https://expo.dev/artifacts/eas/oOBD8rsBE3SCzjpsz0LMn5SVtmc5Jfrokz1gAEv1S28.apk
+**Public Build Page:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/c441361d-97c6-4878-9231-76bbe14c05b0
 
 ---
 
@@ -29,7 +29,7 @@ Keeptrail is a free, 100% local Android receipt organizer designed to save paper
 
 ### Fresh Installation
 
-1. Download `keeptrail-pilot-v1.0.1.apk` on your Android device (Android 10+ recommended).
+1. Download `keeptrail-pilot-v1.0.2.apk` on your Android device (Android 10+ recommended).
 2. Tap the downloaded file in your browser or file manager.
 3. If prompted: **"For your security, your phone is not allowed to install unknown apps from this source"**, tap **Settings** and enable **"Allow from this source"** for your browser or file manager only.
 4. Tap **Install**.
