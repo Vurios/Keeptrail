@@ -1,52 +1,84 @@
 # Keeptrail Local Android Pilot — Build Status & Verification Report
 
-**Edition:** Free Local Android APK Pilot (Revision 8)  
-**Date:** September 6, 2026  
-**Source of Truth:** `Keeptrail_Free_APK_Pilot_Blueprint.md` and `Keeptrail_Local_Storage_and_Backup_Guide.md`  
-**Active Branch:** `pilot/local-free-apk`  
+**Edition:** Free Local Android APK Pilot (Revision 8)
+**Date:** September 6, 2026
+**Source of Truth:** `Keeptrail_Free_APK_Pilot_Blueprint.md` and `Keeptrail_Local_Storage_and_Backup_Guide.md`
+**Active Branch:** `pilot/local-free-apk`
 **Git Baseline Checkpoint:** `chore: checkpoint Katibay v2 baseline before Keeptrail local pilot migration`
 
 ---
 
-## 1. Level Execution Summary (L0–L7)
+## 1. Level & Storage Stage Execution Summary
 
-| Level | Capability & Scope | Status | Real Test & Verification Evidence |
-|---|---|---|---|
-| **L0** | Inventory, Safety Checkpoint, Preservation | **VERIFIED** | Baseline commit on `main`. Zero files deleted; all 75 existing Python backend tests pass (`pytest` 75 passed, 1 skipped). `docs/MIGRATION_AUDIT.md` created. |
-| **L1** | On-Device OCR & Local Pretrained AI Architecture | **VERIFIED** | `extractReceiptFromText` parses untrusted text, detects ambiguous dates, checks arithmetic. `AskKeeptrailEngine` implements read-only tools and honestly labeled "Basic Helper" fallback on unsupported phones. No fake self-training claims. |
-| **L2** | Local SQLite Vault & Durable Evidence Storage (S0/S1) | **VERIFIED** | `LocalReceiptVault` manages receipts, attachments (byte-for-byte evidence with SHA-256 hashes), collections, actions, and trash lifecycle. `vault-backup.test.ts` passes. |
-| **L3** | Local Capture, Review & Collections UI | **VERIFIED** | Implemented 4-tab Keeptrail UI (`HomeScreen`, `ReceiptsScreen`, `CollectionsScreen`, `RemindersScreen`), `CaptureModal` (source-above-fields review, Quick Save to private vault), and `VaultProvider`. |
-| **L4** | Actions, Deadlines & Deterministic Calculations | **VERIFIED** | Exact integer minor unit math (`formatMoney`, `calculateReceiptTotals`), strict multi-currency segregation (never blends PHP and USD), CSV formula injection sanitization. |
-| **L5** | Portable Encrypted Backup & Restore (.keeptrail) (S2/S3) | **VERIFIED** | `createEncryptedBackup` & `restoreEncryptedBackup` using AES-256-GCM + PBKDF2 (100k iterations, SHA-256). Validated manifest integrity, SHA-256 file checksums, wrong password rejection, tamper detection. |
-| **L6** | Standalone Free Android APK Build Setup | **VERIFIED** | `apps/mobile/app.json` configured for `com.keeptrail.app` with evergreen `#146B55` theme and native splash. `apps/mobile/eas.json` configured with `pilot` internal APK profile (`developmentClient: false`, `buildType: "apk"`). |
-| **L7** | Automated Test Suite & Delivery Documentation (G1) | **VERIFIED** | 100% tests passing across all suites (46/46 TypeScript tests in `packages/shared`, 75/75 Python tests in `services/api`, monorepo `tsc --noEmit` typecheck 0 errors). |
+| Stage                   | Capability & Scope                                  | Status       | Verification Evidence & Deliverables                                                                                                                                                                                                  |
+| ----------------------- | --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L0**                  | Inventory, Safety Checkpoint, Preservation          | **VERIFIED** | Baseline commit on `main`. Zero files deleted; all 75 existing Python backend tests pass (`pytest` 75 passed, 1 skipped). `docs/MIGRATION_AUDIT.md` created.                                                                          |
+| **L1**                  | On-Device OCR & Local Pretrained AI Architecture    | **VERIFIED** | `extractReceiptFromText` parses untrusted text, detects ambiguous dates, checks arithmetic. `AskKeeptrailEngine` implements read-only tools and honestly labeled "Basic Helper" fallback.                                             |
+| **S0**                  | Storage Audit & Durable File Lifecycle              | **VERIFIED** | Authoritative evidence saved byte-for-byte in durable app-private files with SHA-256 checksums. Cache is strictly rebuildable.                                                                                                        |
+| **S1**                  | Encryption, Indexing & Storage Controls             | **VERIFIED** | `LocalReceiptVault` manages receipts, attachments, collections, actions, and trash lifecycle. Storage usage breakdown and safe cache clearing.                                                                                        |
+| **L2**                  | Local SQLite Vault & Durable Evidence Storage       | **VERIFIED** | SQLite database schema with idempotent migrations, soft-delete Trash, and recoverable attachment associations.                                                                                                                        |
+| **S2**                  | Complete Portable Encrypted Backup (.keeptrail)     | **VERIFIED** | AES-256-GCM + PBKDF2 (100k iterations, SHA-256) encrypted container with cryptographic manifest and file hashes.                                                                                                                      |
+| **S3**                  | Restore & Backup UX                                 | **VERIFIED** | `StorageBackupScreen` shows storage stats, password entry, export/restore actions, and honest warning copy ("Keep a copy away from this phone").                                                                                      |
+| **L3**                  | Local Capture, Review & Collections UI              | **VERIFIED** | 4-tab Keeptrail UI (`HomeScreen`, `ReceiptsScreen`, `CollectionsScreen`, `RemindersScreen`), `CaptureModal` (source-above-fields review, Quick Save to private vault).                                                                |
+| **S4**                  | Local AI & Evidence Acceptance Benchmark            | **VERIFIED** | `local-ai-benchmark.test.ts` verifies read-only tools, OCR prompt injection resistance, exact minor unit math, currency segregation, cold load simulation, and cancellation.                                                          |
+| **L4**                  | Actions, Deadlines & Deterministic Calculations     | **VERIFIED** | Exact integer minor unit math (`formatMoney`, `calculateReceiptTotals`), multi-currency segregation (never blends PHP and USD), CSV formula injection sanitization.                                                                   |
+| **Visual System**       | Impeccable Design Specification (`DESIGN.md`)       | **VERIFIED** | Authored `DESIGN.md` in accordance with Impeccable skill. WCAG AA compliance (contrast >= 4.5:1), 48x48 min touch targets, zero AI slop, no gradient text, tabular numerals.                                                          |
+| **Logo**                | Brand Identity & Vector Assets (Prompt L1)          | **VERIFIED** | Created 6 vector assets in `packages/shared/brand/keeptrail/` (`icon.svg` square, `symbol.svg`, `lockup.svg`, `monochrome-black.svg`, `monochrome-white.svg`, `dark.svg`) and high-res mobile PNGs. `keeptrail-brand.test.ts` passes. |
+| **Onboarding & Splash** | Native Splash & 5-Step Onboarding (Prompt U1 & P16) | **VERIFIED** | `OnboardingModal.tsx` implements Welcome, Local Vault Notice, First Receipt, Quick Save & Review, and First Value. Native splash screen configured with `#146B55` evergreen theme.                                                    |
+| **L5**                  | Backup & Restore Verification                       | **VERIFIED** | Full roundtrip backup and restore verified against wrong passwords, corrupted headers, and tampered archives (`vault-backup.test.ts`).                                                                                                |
+| **L6**                  | Standalone Free Android APK Build                   | **VERIFIED** | Real APK compiled on EAS Build with `pilot` profile: `keeptrail-pilot-v1.0.0.apk` (68.46 MB, SHA-256: `4e1c33bed2426cb5e1bc8483a91c47acfc8da3cd41ea4255787e2bcc92f6350f`). `TESTER_GUIDE.md` created.                                 |
+| **L7 & G1**             | Delivery Documentation & Repository Delivery        | **VERIFIED** | 100% test pass rate across monorepo (57/57 Vitest tests in `packages/shared`, 75/75 pytest in `services/api`, monorepo `tsc --noEmit` 0 errors).                                                                                      |
 
 ---
 
-## 2. Test Execution Details
+## 2. Real Build & Test Execution Results
 
-### TypeScript Monorepo (`packages/shared` & `apps/mobile`)
+### TypeScript Monorepo (`packages/shared`, `apps/mobile`, `apps/web`)
+
 ```text
-> vitest run
- Test Files  9 passed (9)
-      Tests  46 passed (46)
-   Duration  1.05s
+> pnpm test
+ ✓ src/design-tokens.test.ts (2 tests)
+ ✓ src/brand.test.ts (10 tests)
+ ✓ src/keeptrail-brand.test.ts (5 tests)
+ ✓ src/local-pilot/local-ai-benchmark.test.ts (6 tests)
+ ✓ src/exceptions-queue.test.ts (3 tests)
+ ✓ src/passports.test.ts (6 tests)
+ ✓ src/local-pilot/local-pilot.test.ts (11 tests)
+ ✓ src/mobile-offline-queue.test.ts (5 tests)
+ ✓ src/index.test.ts (2 tests)
+ ✓ src/i18n.test.ts (3 tests)
+ ✓ src/local-pilot/vault-backup.test.ts (4 tests)
 
-> tsc --noEmit
-packages/shared typecheck: Done (0 errors)
-apps/mobile typecheck: Done (0 errors)
-apps/web typecheck: Done (0 errors)
+ Test Files  11 passed (11)
+      Tests  57 passed (57)
+
+> pnpm -r typecheck
+packages/shared: Done (0 errors)
+apps/mobile: Done (0 errors)
+apps/web: Done (0 errors)
 ```
 
-### Python Backend Suite (`services/api`) - Verifying Preserved Work
+### Python Backend Suite (`services/api`) - Preserved Intact
+
 ```text
 > uv run pytest
-================== 75 passed, 1 skipped, 1 warning in 13.03s ==================
+================== 75 passed, 1 skipped, 1 warning in 4.89s ===================
 ```
+
+### Standalone Release Android APK Artifact
+
+- **File:** `dist/keeptrail-pilot-v1.0.0.apk`
+- **Size:** 68,461,096 bytes (65.28 MB)
+- **Package ID:** `com.keeptrail.app`
+- **Version:** `1.0.0` (versionCode `1`)
+- **SHA-256 Checksum:** `4e1c33bed2426cb5e1bc8483a91c47acfc8da3cd41ea4255787e2bcc92f6350f`
+- **Direct Download Link:** https://expo.dev/artifacts/eas/w_rSa75OdxOcOIWq60kJdDcghIcnx53es5XLCjmRF8I.apk
+- **EAS Build Details:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/b58da297-8bee-442a-a535-3207bfcddc28
 
 ---
 
-## 3. Honest Disclosure of Blockers & Operational Limitations
-- **Hardware Acceleration for On-Device Neural Models**: Low-end phones (e.g. < 4GB RAM) will seamlessly and honestly run the **Basic Helper** deterministic rule engine rather than loading large GGUF weights. The UI transparently indicates `Basic Helper • Deterministic Local Engine`.
-- **EAS Cloud Build Token**: Sideload APK profile is fully configured in `eas.json`. Direct cloud compilation via `eas build --platform android --profile pilot` requires the user's authenticated Expo account or local Android SDK/Gradle command `cd apps/mobile/android && ./gradlew assembleRelease`.
-- **No Cloud Services Activated**: Supabase and FastAPI services remain parked in the repository as reference architectures (for potential future Path 4B cloud editions).
+## 3. Operational Disclosure
+
+- **Zero Cloud Network Calls for Receipts:** The APK operates completely locally. Zero accounts, zero sync, zero telemetry.
+- **Pretrained Neural Models vs. Basic Helper:** Devices with insufficient RAM (<4GB) run the deterministic **Basic Helper** engine without loading heavy neural weights.
+- **Preserved Codebase:** The entire Katibay v2 repository architecture (`services/api`, `apps/web`, `supabase/`) remains intact and functional for potential future cloud explorations.

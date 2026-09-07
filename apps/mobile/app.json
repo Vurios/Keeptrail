@@ -28,6 +28,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c6f551b9-db51-4b10-b320-507830c04ad3"
+      }
+    },
+    "owner": "gilrubis"
   }
 }

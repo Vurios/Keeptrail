@@ -16,6 +16,7 @@ interface HomeScreenProps {
   onOpenReceipt: (receipt: ReceiptRecord) => void;
   onOpenAskKeeptrail: () => void;
   onOpenStorageBackup: () => void;
+  onOpenOnboarding?: () => void;
   onNavigateToTab: (tab: "receipts" | "collections" | "reminders") => void;
 }
 
@@ -23,6 +24,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenReceipt,
   onOpenAskKeeptrail,
   onOpenStorageBackup,
+  onOpenOnboarding,
   onNavigateToTab,
 }) => {
   const { receipts, stats } = useLocalVault();
@@ -42,8 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const totals = calculateReceiptTotals(receipts);
   const primaryCurrency = Object.keys(totals.currencies)[0] || "PHP";
-  const primaryTotalFormatted =
-    totals.currencies[primaryCurrency]?.formatted || "₱0.00";
+  const primaryTotalFormatted = totals.currencies[primaryCurrency]?.formatted || "₱0.00";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -58,22 +59,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <Text style={styles.brandTitle}>KEEPTRAIL</Text>
             <Text style={styles.brandTagline}>Save it. Find it. Use it.</Text>
           </View>
-          <TouchableOpacity
-            style={styles.storageBadge}
-            onPress={onOpenStorageBackup}
-            accessibilityLabel="Storage and Backup Settings"
-          >
-            <Text style={styles.storageBadgeIcon}>🔒</Text>
-            <Text style={styles.storageBadgeText}>Vault</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            {onOpenOnboarding && (
+              <TouchableOpacity
+                style={styles.guideBadge}
+                onPress={onOpenOnboarding}
+                accessibilityLabel="Onboarding Guide"
+              >
+                <Text style={styles.storageBadgeIcon}>📖</Text>
+                <Text style={styles.storageBadgeText}>Guide</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.storageBadge}
+              onPress={onOpenStorageBackup}
+              accessibilityLabel="Storage and Backup Settings"
+            >
+              <Text style={styles.storageBadgeIcon}>🔒</Text>
+              <Text style={styles.storageBadgeText}>Vault</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Local Security Status Banner */}
         <View style={styles.securityBanner}>
           <View style={styles.securityDot} />
-          <Text style={styles.securityText}>
-            Saved on this phone • 100% private local storage
-          </Text>
+          <Text style={styles.securityText}>Saved on this phone • 100% private local storage</Text>
         </View>
 
         {/* Search Input */}
@@ -90,11 +101,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </View>
 
         {/* Ask Keeptrail Quick Access Banner */}
-        <TouchableOpacity
-          style={styles.askBanner}
-          onPress={onOpenAskKeeptrail}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.askBanner} onPress={onOpenAskKeeptrail} activeOpacity={0.8}>
           <View style={styles.askIconCircle}>
             <Text style={styles.askIcon}>✨</Text>
           </View>
@@ -170,9 +177,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </View>
 
               <View style={styles.receiptBottomRow}>
-                <Text style={styles.receiptDate}>
-                  {receipt.transaction_date || "No date"}
-                </Text>
+                <Text style={styles.receiptDate}>{receipt.transaction_date || "No date"}</Text>
 
                 <View style={styles.chipsRow}>
                   <View
@@ -191,9 +196,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           : styles.chipUnreviewedText,
                       ]}
                     >
-                      {receipt.review_status === "reviewed"
-                        ? "Reviewed"
-                        : "Needs Review"}
+                      {receipt.review_status === "reviewed" ? "Reviewed" : "Needs Review"}
                     </Text>
                   </View>
                 </View>
@@ -234,6 +237,21 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.brand.textSecondary,
     marginTop: 2,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  guideBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.brand.surface,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.brand.border,
   },
   storageBadge: {
     flexDirection: "row",

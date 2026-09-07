@@ -1,66 +1,54 @@
-# Product
+# Product: Keeptrail (Free Local Android APK Pilot)
 
 <!-- impeccable:product-schema 1 -->
 
 ## Platform
 
-web
+android
 
 ## Stack
 
-Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui, Expo (React Native), FastAPI (Python 3.12), PostgreSQL / Supabase, WeasyPrint
+React Native, Expo, TypeScript, Local SQLite Vault, On-Device OCR, AES-256-GCM Backup Encryption, Deterministic Money Engine. (Historical services/api Python backend and apps/web Next.js app preserved intact for future cloud evaluation).
 
 ## Users
 
-- **Primary:** Student organization, NGO, committee, and project treasurers in the Philippines managing cash advances (₱10k–₱100k) with strict liquidation deadlines and annual officer turnover.
-- **Secondary:** Consumers and individuals in the Philippines needing durable proof of purchase, warranty countdowns, and claim packets for high-value appliances, electronics, and devices.
+- **Primary:** Individuals, project leads, consumers, and expense managers who need to reliably save, find, and use receipts, payment screenshots, and supporting documents on their Android phone without creating accounts or uploading private financial documents to the cloud.
+- **Audience Context:** Testers evaluating offline reliability, on-device search, encrypted backup/restore, and deterministic calculations without ads, subscriptions, or paywalls.
 
 ## Product Purpose
 
-Katibay transforms messy receipt photos into verified, indisputable financial records (Verified Receipt Records - VRRs). It eliminates manual reconciliation by turning piles of faded thermal slips and crumpled receipts into compliant Philippine liquidation packets (reports, vouchers, summaries, variance analysis, evidence archives) and consumer Purchase Passports.
+Keeptrail keeps your receipts, payment screenshots, and supporting documents together with the reason you saved them—so you can find the right record, share it, or follow up when it matters. Everything runs locally on the phone: zero accounts, zero cloud receipt backend, zero multi-phone sync, zero subscriptions.
 
 ## Positioning
 
-The receipt is the wrong unit; verified proof is the right unit. Unlike global corporate expense tools built on employee reimbursement, Katibay natively models the inverted Philippine cash-advance-to-liquidation workflow (cash advance → verification → return of excess cash), handles faded thermal paper with deterministic backend arithmetic recomputation (no LLM hallucinated totals), and produces the exact liquidation forms and claim packets accepted by Philippine universities, auditing offices, and service centers.
+Save it. Find it. Use it.
+Unlike cloud tools that monetize personal financial transactions or require monthly subscriptions, Keeptrail runs entirely as a private on-device vault. Financial totals are computed deterministically in application code with exact minor unit integers (no floating point errors, no LLM math hallucinations). AI assistance is local, read-only, and honestly labeled as a Basic Helper on phones without neural model acceleration.
 
 ## Operating Context
 
-- High volume of irregular, crumpled, or fading thermal POS slips, official receipts (OR), collection receipts, and invoices.
-- Cash advances disbursed upfront, requiring formal liquidation with return-of-excess or replenishment documentation under strict deadlines.
-- Treasurers work in stressful end-of-semester or post-event sprints, often collecting receipts from committee members via mobile photo submissions.
-- Annual officer turnover requiring zero-loss institutional memory and immediate usability without corporate training.
+- Android mobile devices running offline or online.
+- Camera captures, gallery photo imports, payment app screenshots, PDFs, and manual entries.
+- Private on-device SQLite database + byte-for-byte evidence file storage with SHA-256 integrity checksums.
+- Encrypted password-protected `.keeptrail` backup containers (AES-256-GCM + PBKDF2).
 
-## Capabilities and Constraints
+## Core Capabilities and Constraints
 
-- **Verified Receipt Record (VRR):** Multi-pass extraction with deterministic backend arithmetic recomputation; LLMs extract, Python recomputes.
-- **Exception Queue:** Low-confidence extractions trigger a single, precise human confirmation question instead of guessing.
-- **Philippine Liquidation Packet Generator:** Produces auditable PDFs (Liquidation Report, Summary of Expenses, Cash Advance Voucher, Variance Statement, and stamped evidence compilation).
-- **Purchase Passport Vault:** Warranty tracking countdown, serial registration, receipt preservation, and exportable warranty claim packets.
-- **Technical Constraints:** Integer centavos for all currency storage (never floats); strict bilingual support (English `en` and Filipino `fil` only); immutable audit trail logs for every state transition; no hardcoded UI colors (tokens only).
+- **Private On-Device Vault:** All metadata and original receipt files remain strictly on the user's phone.
+- **Deterministic Money Tools:** Exact integer minor unit math; multi-currency segregation (never blends PHP, USD, etc.); CSV formula injection sanitization.
+- **On-Device OCR & Extraction:** Extracts merchant, date, amount, items, and flags ambiguous dates without cloud dependencies.
+- **Portable Encrypted Backup (.keeptrail):** User-controlled AES-256-GCM archive with cryptographic manifest and file checksums.
+- **Ask Keeptrail (Local Assistant):** Read-only exploration tool with trusted deterministic calculation cards and honest Basic Helper labeling.
+- **Zero Cloud Leakage:** No background network calls for receipts, no third-party tracking, no cloud inference.
 
 ## Brand Commitments
 
-- **Name:** Katibay (from *katibayan*, Filipino for "proof / documentary evidence").
-- **Tagline:** *Turn a pile of receipts into proof that holds up.*
-- **Tone & Voice:** Authoritative, precise, reliable, stress-relieving, and deeply localized to Philippine institutional realities.
-- **Design Tokens:** Shared design tokens via `packages/shared` — clean, audit-grade visual hierarchy, no raw hex values.
+- **Name:** Keeptrail (one word, English compound).
+- **Tagline:** *Save it. Find it. Use it.*
+- **Palette:** Evergreen `#146B55` primary, Warm Neutral `#F7F8F4` background, Surface `#FFFFFF`, Obsidian Dark `#111A16`.
+- **Icon Mark:** Folded document shape with continuous trail path in negative space.
 
-## Evidence on Hand
+---
 
-- Complete product blueprint: `Katibay_Product_Blueprint_v2.md`
-- Non-negotiable engineering rules: `CLAUDE.md`
-- Monorepo workspace configuration: `apps/web`, `apps/mobile`, `services/api`, `packages/shared`
+## Historical Provenance: Katibay Baseline (Preserved)
 
-## Product Principles
-
-1. **Proof Over Pixels:** Never trust raw OCR/LLM output for math; python recomputes, system verifies, human confirms exceptions.
-2. **Inverted Cash Model First:** Built ground-up for cash advances and excess returns, not corporate reimbursement.
-3. **One Object, Multiple Lenses:** The Verified Receipt Record (VRR) is the single atomic source of truth for both org liquidations and consumer passports.
-4. **Audit-Ready by Default:** Every extraction, edit, and calculation generates an immutable audit trail.
-5. **Radical Clarity in Stress:** Designed for anxious treasurers facing deadlines; clear exceptions, immediate feedback, zero financial ambiguity.
-
-## Accessibility & Inclusion
-
-- Support for English (`en`) and Filipino (`fil`) locales.
-- High contrast, legible typography optimized for tabular numerical scanning, audit verification, and receipt image inspection.
-- WCAG AA compliant interactive elements and keyboard-navigable exception queues.
+Prior to Revision 8 (September 2026), the codebase was developed as *Katibay* (Philippine liquidation packet and warranty passport system). All existing Python backend endpoints (`services/api`), web routes (`apps/web`), and database migrations (`supabase/`) are preserved intact and unaffected to allow future cloud edition exploration (Path 4B) without data loss or destructive rewrites.

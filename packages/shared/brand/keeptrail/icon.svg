@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Keeptrail Master App Icon (Square canvas with generous safe space, no baked-in device corners) -->
+  <rect width="512" height="512" fill="#146B55"/>
+
+  <!-- Primary Document Body: Folded corner top-right with warm white fill -->
+  <path d="M 148 108 L 308 108 L 372 172 L 372 404 C 372 415 363 424 352 424 L 148 424 C 137 424 128 415 128 404 L 128 128 C 128 117 137 108 148 108 Z"
+        fill="#F7F8F4"/>
+
+  <!-- Folded Corner Geometry -->
+  <path d="M 308 108 L 308 164 C 308 168 312 172 316 172 L 372 172 Z"
+        fill="#DCE4DE"/>
+
+  <!-- The Trail: Continuous path in negative space suggesting traceable context -->
+  <path d="M 184 212 L 316 212"
+        stroke="#146B55" stroke-width="20" stroke-linecap="round"/>
+  <path d="M 184 272 L 276 272"
+        stroke="#146B55" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Looping verification knot / trail node -->
+  <path d="M 184 332 L 236 332 C 252 332 264 344 264 360 C 264 376 252 388 236 388 C 220 388 208 376 208 360 L 208 340"
+        fill="none" stroke="#146B55" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="288" cy="332" r="10" fill="#146B55"/>
+</svg>
