@@ -10,6 +10,7 @@
     "react-native": "0.86.3"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3",
     "vitest": "^3.2.7"

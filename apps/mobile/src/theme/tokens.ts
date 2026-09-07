@@ -1,57 +1,71 @@
 /**
- * Katibay Mobile Design Tokens
- * Strictly mirrored from packages/shared/design-tokens.md and apps/web design system.
+ * Keeptrail Mobile Design Tokens
+ * Strictly aligned with Keeptrail_Free_APK_Pilot_Blueprint.md (Section 6)
  */
 
 export const colors = {
-  // Brand Palette
+  // Brand Palette - Light Mode Tokens
   brand: {
-    primary: "#0f372c", // Katibay deep forest green
-    primaryHover: "#174d3f",
-    primaryFg: "#ffffff",
-    accent: "#c9973b", // Official seal gold
-    accentHover: "#d8a649",
+    primary: "#146B55", // Keeptrail evergreen
+    primaryPressed: "#0F5141",
+    primaryFg: "#FFFFFF",
+    surface: "#FFFFFF",
+    surfaceAlt: "#E6F3EC", // Selected background
+    background: "#F7F8F4", // Warm neutral surface
+    card: "#FFFFFF",
+    border: "#DCE4DE", // Decorative divider
+    controlBorder: "#77877E",
+    borderStrong: "#77877E",
+    accent: "#c9973b",
     accentFg: "#1a160d",
-    surface: "#f8faf9",
-    surfaceAlt: "#f0f4f2",
-    card: "#ffffff",
-    border: "#e2e8e5",
-    borderStrong: "#c8d4ce",
-    textPrimary: "#121d19",
-    textSecondary: "#4b5d56",
-    textMuted: "#6b7d76",
+    textPrimary: "#182824",
+    textSecondary: "#5C6C65",
+    textMuted: "#77877E",
+  },
+
+
+  // Dark Mode Tokens
+  dark: {
+    background: "#111A16",
+    surface: "#1B2922",
+    surfaceElevated: "#26382E",
+    primary: "#8DDBB0",
+    onPrimary: "#10241A",
+    textPrimary: "#EFF5F1",
+    textSecondary: "#B6C7BD",
+    controlBorder: "#82988A",
   },
 
   // Semantic Status Tokens
   status: {
     success: {
-      bg: "#ecfdf5",
-      border: "#a7f3d0",
-      text: "#065f46",
+      bg: "#E6F3EC",
+      border: "#8DDBB0",
+      text: "#146B55",
       fill: "#10b981",
     },
     warning: {
-      bg: "#fffbeb",
-      border: "#fde68a",
-      text: "#92400e",
+      bg: "#FFF3CD",
+      border: "#FFE19B",
+      text: "#865500",
       fill: "#f59e0b",
     },
     danger: {
-      bg: "#fef2f2",
-      border: "#fecaca",
-      text: "#991b1b",
+      bg: "#FEECE9",
+      border: "#FFB4AB",
+      text: "#B42318",
       fill: "#ef4444",
     },
     info: {
-      bg: "#eff6ff",
-      border: "#bfdbfe",
-      text: "#1e40af",
+      bg: "#EAF1FF",
+      border: "#B5CEFF",
+      text: "#245BB2",
       fill: "#3b82f6",
     },
     neutral: {
-      bg: "#f3f4f6",
-      border: "#e5e7eb",
-      text: "#374151",
+      bg: "#F7F8F4",
+      border: "#DCE4DE",
+      text: "#5C6C65",
       fill: "#6b7280",
     },
   },
@@ -66,43 +80,51 @@ export const spacing = {
   xl: 20,
   xxl: 24,
   xxxl: 32,
-  thumb: 48, // Minimum touch target
-  shutter: 72, // Giant thumb shutter target
+  thumb: 48, // Minimum touch target (48x48)
+  buttonHeight: 52, // Primary button height
+  shutter: 72, // Large capture shutter target
 } as const;
 
 export const borderRadius = {
   sm: 4,
   md: 8,
   lg: 12,
-  xl: 16,
+  control: 12, // Control radius
+  card: 16, // Card radius
   full: 9999,
 } as const;
 
+
 export const typography = {
-  display: {
+  mainTitle: {
     fontSize: 28,
-    fontWeight: "800" as const,
+    fontWeight: "700" as const,
     lineHeight: 34,
   },
-  heading1: {
-    fontSize: 22,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: "700" as const,
-    lineHeight: 28,
+    lineHeight: 26,
   },
   heading2: {
     fontSize: 18,
-    fontWeight: "700" as const,
+    fontWeight: "600" as const,
     lineHeight: 24,
   },
   body: {
-    fontSize: 14,
+    fontSize: 16, // Body 16 logical units
     fontWeight: "400" as const,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   bodyBold: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600" as const,
-    lineHeight: 20,
+    lineHeight: 22,
+  },
+  supporting: {
+    fontSize: 14, // Supporting text 14
+    fontWeight: "400" as const,
+    lineHeight: 18,
   },
   caption: {
     fontSize: 12,
@@ -110,7 +132,7 @@ export const typography = {
     lineHeight: 16,
   },
   mono: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600" as const,
     fontFamily: "monospace",
   },

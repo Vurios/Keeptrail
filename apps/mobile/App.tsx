@@ -1,120 +1,294 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { colors, spacing, borderRadius, typography } from "./src/theme/tokens";
-import { CameraScreen } from "./src/screens/CameraScreen";
-import { QueueScreen } from "./src/screens/QueueScreen";
-import { PassportMobileScreen } from "./src/screens/PassportMobileScreen";
+import { VaultProvider } from "./src/vault-context";
+import { HomeScreen } from "./src/screens/HomeScreen";
+import { ReceiptsScreen } from "./src/screens/ReceiptsScreen";
+import { CollectionsScreen } from "./src/screens/CollectionsScreen";
+import { RemindersScreen } from "./src/screens/RemindersScreen";
+import { StorageBackupScreen } from "./src/screens/StorageBackupScreen";
+import { AskKeeptrailScreen } from "./src/screens/AskKeeptrailScreen";
+import { CaptureModal } from "./src/screens/CaptureModal";
+import { ReceiptRecord } from "@katibay/shared";
 
-type TabScreen = "camera" | "queue" | "passports";
+type MainTab = "home" | "receipts" | "collections" | "reminders";
+type ActiveOverlay = "none" | "storage_backup" | "ask_keeptrail";
 
-export default function App() {
-  const [currentTab, setCurrentTab] = useState<TabScreen>("camera");
+function MainApp() {
+  const [currentTab, setCurrentTab] = useState<MainTab>("home");
+  const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>("none");
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
+  const [isCaptureModalOpen, setIsCaptureModalOpen] = useState(false);
+
+  const handleOpenReceiptFromAnywhere = (receipt: ReceiptRecord) => {
+    setSelectedReceipt(receipt);
+    setCurrentTab("receipts");
+    setActiveOverlay("none");
+  };
 
   return (
     <View style={styles.appContainer}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
-      {/* Screen Render */}
+      {/* Primary Screen Content */}
       <View style={styles.screenContent}>
-        {currentTab === "camera" && (
-          <CameraScreen onNavigateToQueue={() => setCurrentTab("queue")} />
+        {activeOverlay === "storage_backup" ? (
+          <StorageBackupScreen onBack={() => setActiveOverlay("none")} />
+        ) : activeOverlay === "ask_keeptrail" ? (
+          <AskKeeptrailScreen
+            onBack={() => setActiveOverlay("none")}
+            onOpenReceipt={handleOpenReceiptFromAnywhere}
+          />
+        ) : (
+          <>
+            {currentTab === "home" && (
+              <HomeScreen
+                onOpenReceipt={handleOpenReceiptFromAnywhere}
+                onOpenAskKeeptrail={() => setActiveOverlay("ask_keeptrail")}
+                onOpenStorageBackup={() => setActiveOverlay("storage_backup")}
+                onNavigateToTab={(tab) => setCurrentTab(tab)}
+              />
+            )}
+            {currentTab === "receipts" && (
+              <ReceiptsScreen
+                selectedReceipt={selectedReceipt}
+                onClearSelectedReceipt={() => setSelectedReceipt(null)}
+              />
+            )}
+            {currentTab === "collections" && (
+              <CollectionsScreen onOpenReceipt={handleOpenReceiptFromAnywhere} />
+            )}
+            {currentTab === "reminders" && <RemindersScreen />}
+          </>
         )}
-        {currentTab === "queue" && <QueueScreen onBackToCamera={() => setCurrentTab("camera")} />}
-        {currentTab === "passports" && <PassportMobileScreen />}
       </View>
 
-      {/* Bottom Thumb Navigation Bar */}
-      <SafeAreaView style={styles.bottomNavContainer}>
-        <View style={styles.bottomNav}>
-          <TouchableOpacity
-            style={[styles.navTab, currentTab === "camera" && styles.navTabActive]}
-            onPress={() => setCurrentTab("camera")}
-            accessibilityLabel="Camera Capture Tab"
-          >
-            <Text style={[styles.navIcon, currentTab === "camera" && styles.navIconActive]}>
-              📷
-            </Text>
-            <Text style={[styles.navLabel, currentTab === "camera" && styles.navLabelActive]}>
-              Capture
-            </Text>
-          </TouchableOpacity>
+      {/* Floating Action Button for Quick Capture */}
+      {activeOverlay === "none" && (
+        <TouchableOpacity
+          style={styles.floatingCaptureBtn}
+          onPress={() => setIsCaptureModalOpen(true)}
+          activeOpacity={0.85}
+          accessibilityLabel="Capture or Add Receipt"
+        >
+          <Text style={styles.floatingCaptureIcon}>+</Text>
+        </TouchableOpacity>
+      )}
 
-          <TouchableOpacity
-            style={[styles.navTab, currentTab === "queue" && styles.navTabActive]}
-            onPress={() => setCurrentTab("queue")}
-            accessibilityLabel="Sync Queue Tab"
-          >
-            <Text style={[styles.navIcon, currentTab === "queue" && styles.navIconActive]}>📦</Text>
-            <Text style={[styles.navLabel, currentTab === "queue" && styles.navLabelActive]}>
-              Sync Queue
-            </Text>
-          </TouchableOpacity>
+      {/* Bottom Navigation Bar */}
+      {activeOverlay === "none" && (
+        <SafeAreaView style={styles.bottomNavContainer}>
+          <View style={styles.bottomNav}>
+            {/* Tab 1: Home */}
+            <TouchableOpacity
+              style={[
+                styles.navTab,
+                currentTab === "home" && styles.navTabActive,
+              ]}
+              onPress={() => setCurrentTab("home")}
+              accessibilityLabel="Home Tab"
+            >
+              <Text
+                style={[
+                  styles.navIcon,
+                  currentTab === "home" && styles.navIconActive,
+                ]}
+              >
+                🏠
+              </Text>
+              <Text
+                style={[
+                  styles.navLabel,
+                  currentTab === "home" && styles.navLabelActive,
+                ]}
+              >
+                Home
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.navTab, currentTab === "passports" && styles.navTabActive]}
-            onPress={() => setCurrentTab("passports")}
-            accessibilityLabel="Passports Tab"
-          >
-            <Text style={[styles.navIcon, currentTab === "passports" && styles.navIconActive]}>
-              🛡
-            </Text>
-            <Text style={[styles.navLabel, currentTab === "passports" && styles.navLabelActive]}>
-              Passports
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+            {/* Tab 2: Receipts */}
+            <TouchableOpacity
+              style={[
+                styles.navTab,
+                currentTab === "receipts" && styles.navTabActive,
+              ]}
+              onPress={() => setCurrentTab("receipts")}
+              accessibilityLabel="Receipts Tab"
+            >
+              <Text
+                style={[
+                  styles.navIcon,
+                  currentTab === "receipts" && styles.navIconActive,
+                ]}
+              >
+                🧾
+              </Text>
+              <Text
+                style={[
+                  styles.navLabel,
+                  currentTab === "receipts" && styles.navLabelActive,
+                ]}
+              >
+                Receipts
+              </Text>
+            </TouchableOpacity>
+
+            {/* Center Spacer for Floating Button */}
+            <View style={styles.navCenterSpacer} />
+
+            {/* Tab 3: Collections */}
+            <TouchableOpacity
+              style={[
+                styles.navTab,
+                currentTab === "collections" && styles.navTabActive,
+              ]}
+              onPress={() => setCurrentTab("collections")}
+              accessibilityLabel="Collections Tab"
+            >
+              <Text
+                style={[
+                  styles.navIcon,
+                  currentTab === "collections" && styles.navIconActive,
+                ]}
+              >
+                📁
+              </Text>
+              <Text
+                style={[
+                  styles.navLabel,
+                  currentTab === "collections" && styles.navLabelActive,
+                ]}
+              >
+                Collections
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tab 4: Reminders */}
+            <TouchableOpacity
+              style={[
+                styles.navTab,
+                currentTab === "reminders" && styles.navTabActive,
+              ]}
+              onPress={() => setCurrentTab("reminders")}
+              accessibilityLabel="Reminders Tab"
+            >
+              <Text
+                style={[
+                  styles.navIcon,
+                  currentTab === "reminders" && styles.navIconActive,
+                ]}
+              >
+                ⏰
+              </Text>
+              <Text
+                style={[
+                  styles.navLabel,
+                  currentTab === "reminders" && styles.navLabelActive,
+                ]}
+              >
+                Reminders
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+
+      {/* Capture Modal */}
+      <CaptureModal
+        visible={isCaptureModalOpen}
+        onClose={() => setIsCaptureModalOpen(false)}
+      />
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <VaultProvider>
+      <MainApp />
+    </VaultProvider>
   );
 }
 
 const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: colors.brand.background,
   },
   screenContent: {
     flex: 1,
   },
+  floatingCaptureBtn: {
+    position: "absolute",
+    bottom: 34,
+    alignSelf: "center",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.brand.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 99,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  floatingCaptureIcon: {
+    fontSize: 32,
+    color: colors.brand.primaryFg,
+    lineHeight: 36,
+    fontWeight: "600",
+  },
   bottomNavContainer: {
-    backgroundColor: colors.brand.card,
+    backgroundColor: colors.brand.surface,
     borderTopWidth: 1,
     borderTopColor: colors.brand.border,
   },
   bottomNav: {
     flexDirection: "row",
-    height: 56,
+    height: 64,
     alignItems: "center",
-    justifyContent: "space-around",
-    paddingHorizontal: spacing.md,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.sm,
+  },
+  navCenterSpacer: {
+    width: 64,
   },
   navTab: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.xs,
-    borderRadius: borderRadius.md,
     height: "100%",
   },
   navTabActive: {
-    backgroundColor: colors.brand.surfaceAlt,
+    borderTopWidth: 2,
+    borderTopColor: colors.brand.primary,
   },
   navIcon: {
-    fontSize: 16,
-    opacity: 0.6,
+    fontSize: 20,
+    opacity: 0.5,
   },
   navIconActive: {
     opacity: 1,
   },
   navLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: colors.brand.textMuted,
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.brand.textSecondary,
     marginTop: 2,
   },
   navLabelActive: {
     color: colors.brand.primary,
-    fontWeight: "800",
+    fontWeight: "700",
   },
 });
