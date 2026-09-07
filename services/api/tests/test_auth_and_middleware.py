@@ -56,6 +56,7 @@ def generate_jwt(
     payload = {
         "sub": str(user_id),
         "email": email,
+        "aud": settings.supabase_jwt_audience,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=expires_in_sec)).timestamp()),
         "app_metadata": {"memberships": memberships or {}},

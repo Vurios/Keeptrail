@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Buffer } from "buffer";
 import { LocalReceiptVault } from "./local-vault";
-import {
-  createEncryptedBackup,
-  restoreEncryptedBackup,
-  computeSha256,
-} from "./backup-encryption";
+import { createEncryptedBackup, restoreEncryptedBackup, computeSha256 } from "./backup-encryption";
 import type { ReceiptRecord, AttachmentRecord } from "./types";
 
 describe("L2 & L5: Local Vault & Encrypted Backup/Restore Engine", () => {
@@ -66,11 +62,11 @@ describe("L2 & L5: Local Vault & Encrypted Backup/Restore Engine", () => {
 
     // 4. Test Trash workflow
     vault.moveToTrash("rec_alpha");
-    expect(vault.listReceipts({ includeTrashed: false }).length).toBe(0);
-    expect(vault.listReceipts({ includeTrashed: true }).length).toBe(1);
+    expect(vault.listReceipts({ trashScope: "active" }).length).toBe(0);
+    expect(vault.listReceipts({ trashScope: "trashed" }).length).toBe(1);
 
     vault.restoreFromTrash("rec_alpha");
-    expect(vault.listReceipts({ includeTrashed: false }).length).toBe(1);
+    expect(vault.listReceipts({ trashScope: "active" }).length).toBe(1);
   });
 
   it("creates encrypted .keeptrail backup and restores with integrity verification", () => {
@@ -113,7 +109,7 @@ describe("L2 & L5: Local Vault & Encrypted Backup/Restore Engine", () => {
         ocr_text: "PC Express Total 3200.00",
         created_at: new Date().toISOString(),
       },
-      fileContent
+      fileContent,
     );
 
     const payload = vault.getBackupPayload();

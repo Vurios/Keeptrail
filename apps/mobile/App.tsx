@@ -1,256 +1,196 @@
-import React, { useState } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { BackHandler, Pressable, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { ReceiptRecord } from "@katibay/shared";
+
 import { VaultProvider } from "./src/vault-context";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
-import { ToastProvider } from "./src/components/ToastContext";
+import { SnackbarProvider } from "./src/components/SnackbarContext";
+import { Icon } from "./src/components/Icon";
+import { TabBar, type TabKey } from "./src/navigation/TabBar";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { ReceiptsScreen } from "./src/screens/ReceiptsScreen";
-import { CollectionsScreen } from "./src/screens/CollectionsScreen";
 import { RemindersScreen } from "./src/screens/RemindersScreen";
 import { StorageBackupScreen } from "./src/screens/StorageBackupScreen";
 import { AskKeeptrailScreen } from "./src/screens/AskKeeptrailScreen";
 import { CaptureModal } from "./src/screens/CaptureModal";
 import { OnboardingModal } from "./src/screens/OnboardingModal";
-import { ReceiptRecord } from "@katibay/shared";
 import { haptics } from "./src/utils/haptics";
 
-type MainTab = "home" | "receipts" | "collections" | "reminders";
-type ActiveOverlay = "none" | "storage_backup" | "ask_keeptrail";
+const ONBOARDING_KEY = "keeptrail.onboarding.completedVersion";
+/** Bump to re-show onboarding after a change users need to see. */
+const ONBOARDING_VERSION = "1";
+
+type Overlay = "none" | "ask";
 
 function MainApp() {
-  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
-  const [currentTab, setCurrentTab] = useState<MainTab>("home");
-  const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>("none");
-  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
-  const [isCaptureModalOpen, setIsCaptureModalOpen] = useState(false);
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const { colors, spacing, elevation, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
-  const handleOpenReceiptFromAnywhere = (receipt: ReceiptRecord) => {
+  const [tab, setTab] = useState<TabKey>("home");
+  const [overlay, setOverlay] = useState<Overlay>("none");
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [receiptsFilter, setReceiptsFilter] = useState<{
+    collectionId?: string;
+    reviewOnly?: boolean;
+    focusReceiptId?: string;
+  }>({});
+
+  // Onboarding is shown on first run, and the completion flag is stored so it
+  // does not reappear. Previously it could only be reached by tapping a header
+  // button, so nobody saw the screen that explains a backup password can never
+  // be recovered.
+  const onboardingChecked = useRef(false);
+  useEffect(() => {
+    if (onboardingChecked.current) return;
+    onboardingChecked.current = true;
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((completed) => {
+        if (completed !== ONBOARDING_VERSION) setOnboardingOpen(true);
+      })
+      .catch(() => setOnboardingOpen(true));
+  }, []);
+
+  const closeOnboarding = useCallback(() => {
+    setOnboardingOpen(false);
+    AsyncStorage.setItem(ONBOARDING_KEY, ONBOARDING_VERSION).catch(() => undefined);
+  }, []);
+
+  const openTab = useCallback((next: TabKey) => {
     haptics.tap();
-    setSelectedReceipt(receipt);
-    setCurrentTab("receipts");
-    setActiveOverlay("none");
-  };
+    setOverlay("none");
+    setTab(next);
+  }, []);
 
-  const handleTabChange = (tab: MainTab) => {
-    if (tab !== currentTab) {
-      haptics.tap();
-      setCurrentTab(tab);
-    }
-  };
+  const openReceipt = useCallback((receipt: ReceiptRecord) => {
+    haptics.tap();
+    setOverlay("none");
+    setReceiptsFilter({ focusReceiptId: receipt.id });
+    setTab("receipts");
+  }, []);
+
+  const openReviewQueue = useCallback(() => {
+    haptics.tap();
+    setReceiptsFilter({ reviewOnly: true });
+    setTab("receipts");
+  }, []);
+
+  const openCollection = useCallback((collectionId: string) => {
+    haptics.tap();
+    setReceiptsFilter({ collectionId });
+    setTab("receipts");
+  }, []);
+
+  // Hardware and gesture Back. Without this, Back inside an overlay closed the
+  // whole app, and Back on any tab other than Home exited rather than returning
+  // to the start destination.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (overlay !== "none") {
+        setOverlay("none");
+        return true;
+      }
+      if (tab !== "home") {
+        setTab("home");
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [overlay, tab]);
+
+  const showChrome = overlay === "none";
 
   return (
-    <View style={[styles.appContainer, { backgroundColor: colors.background }]}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar style={isDark ? "light" : "dark"} />
 
-      {/* Primary Screen Content */}
-      <View style={styles.screenContent}>
-        {activeOverlay === "storage_backup" ? (
-          <StorageBackupScreen onBack={() => setActiveOverlay("none")} />
-        ) : activeOverlay === "ask_keeptrail" ? (
-          <AskKeeptrailScreen
-            onBack={() => setActiveOverlay("none")}
-            onOpenReceipt={handleOpenReceiptFromAnywhere}
-          />
+      <View style={{ flex: 1 }}>
+        {overlay === "ask" ? (
+          <AskKeeptrailScreen onBack={() => setOverlay("none")} onOpenReceipt={openReceipt} />
         ) : (
           <>
-            {currentTab === "home" && (
+            {tab === "home" && (
               <HomeScreen
-                onOpenReceipt={handleOpenReceiptFromAnywhere}
-                onOpenAskKeeptrail={() => {
+                onOpenReceipt={openReceipt}
+                onOpenAsk={() => {
                   haptics.tap();
-                  setActiveOverlay("ask_keeptrail");
+                  setOverlay("ask");
                 }}
-                onOpenStorageBackup={() => {
+                onOpenGuide={() => setOnboardingOpen(true)}
+                onOpenReviewQueue={openReviewQueue}
+                onOpenCollection={openCollection}
+                onOpenAllReceipts={() => {
+                  setReceiptsFilter({});
+                  openTab("receipts");
+                }}
+                onStartCapture={() => {
                   haptics.tap();
-                  setActiveOverlay("storage_backup");
+                  setCaptureOpen(true);
                 }}
-                onOpenOnboarding={() => {
-                  haptics.tap();
-                  setIsOnboardingOpen(true);
-                }}
-                onNavigateToTab={(tab) => handleTabChange(tab)}
               />
             )}
-            {currentTab === "receipts" && (
+            {tab === "receipts" && (
               <ReceiptsScreen
-                selectedReceipt={selectedReceipt}
-                onClearSelectedReceipt={() => setSelectedReceipt(null)}
+                initialFilter={receiptsFilter}
+                onFilterConsumed={() => setReceiptsFilter({})}
+                onStartCapture={() => {
+                  haptics.tap();
+                  setCaptureOpen(true);
+                }}
               />
             )}
-            {currentTab === "collections" && (
-              <CollectionsScreen onOpenReceipt={handleOpenReceiptFromAnywhere} />
-            )}
-            {currentTab === "reminders" && <RemindersScreen />}
+            {tab === "reminders" && <RemindersScreen onOpenReceipt={openReceipt} />}
+            {tab === "vault" && <StorageBackupScreen onOpenAsk={() => setOverlay("ask")} />}
           </>
         )}
       </View>
 
-      {/* Bottom Navigation Bar */}
-      {activeOverlay === "none" && (
-        <SafeAreaView
-          style={[
-            styles.bottomNavContainer,
-            {
-              backgroundColor: colors.surface,
-              borderTopColor: colors.border,
-            },
-          ]}
-        >
-          <View style={styles.bottomNav} accessibilityRole="tablist">
-            {/* Tab 1: Home */}
-            <TouchableOpacity
-              style={[
-                styles.navTab,
-                currentTab === "home" && [styles.navTabActive, { borderTopColor: colors.primary }],
-              ]}
-              onPress={() => handleTabChange("home")}
-              accessibilityRole="tab"
-              accessibilityLabel="Home Tab"
-              accessibilityState={{ selected: currentTab === "home" }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.navIcon, currentTab === "home" && styles.navIconActive]}>
-                🏠
-              </Text>
-              <Text
-                style={[
-                  styles.navLabel,
-                  { color: currentTab === "home" ? colors.primary : colors.textSecondary },
-                  currentTab === "home" && styles.navLabelActive,
-                ]}
-              >
-                Home
-              </Text>
-            </TouchableOpacity>
-
-            {/* Tab 2: Receipts */}
-            <TouchableOpacity
-              style={[
-                styles.navTab,
-                currentTab === "receipts" && [
-                  styles.navTabActive,
-                  { borderTopColor: colors.primary },
-                ],
-              ]}
-              onPress={() => handleTabChange("receipts")}
-              accessibilityRole="tab"
-              accessibilityLabel="Receipts Tab"
-              accessibilityState={{ selected: currentTab === "receipts" }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.navIcon, currentTab === "receipts" && styles.navIconActive]}>
-                🧾
-              </Text>
-              <Text
-                style={[
-                  styles.navLabel,
-                  { color: currentTab === "receipts" ? colors.primary : colors.textSecondary },
-                  currentTab === "receipts" && styles.navLabelActive,
-                ]}
-              >
-                Receipts
-              </Text>
-            </TouchableOpacity>
-
-            {/* Center Spacer for Floating Button */}
-            <View style={styles.navCenterSpacer} pointerEvents="none" />
-
-            {/* Tab 3: Collections */}
-            <TouchableOpacity
-              style={[
-                styles.navTab,
-                currentTab === "collections" && [
-                  styles.navTabActive,
-                  { borderTopColor: colors.primary },
-                ],
-              ]}
-              onPress={() => handleTabChange("collections")}
-              accessibilityRole="tab"
-              accessibilityLabel="Collections Tab"
-              accessibilityState={{ selected: currentTab === "collections" }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.navIcon, currentTab === "collections" && styles.navIconActive]}>
-                📁
-              </Text>
-              <Text
-                style={[
-                  styles.navLabel,
-                  { color: currentTab === "collections" ? colors.primary : colors.textSecondary },
-                  currentTab === "collections" && styles.navLabelActive,
-                ]}
-              >
-                Collections
-              </Text>
-            </TouchableOpacity>
-
-            {/* Tab 4: Reminders */}
-            <TouchableOpacity
-              style={[
-                styles.navTab,
-                currentTab === "reminders" && [
-                  styles.navTabActive,
-                  { borderTopColor: colors.primary },
-                ],
-              ]}
-              onPress={() => handleTabChange("reminders")}
-              accessibilityRole="tab"
-              accessibilityLabel="Reminders Tab"
-              accessibilityState={{ selected: currentTab === "reminders" }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.navIcon, currentTab === "reminders" && styles.navIconActive]}>
-                ⏰
-              </Text>
-              <Text
-                style={[
-                  styles.navLabel,
-                  { color: currentTab === "reminders" ? colors.primary : colors.textSecondary },
-                  currentTab === "reminders" && styles.navLabelActive,
-                ]}
-              >
-                Reminders
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      )}
-
-      {/* Floating Action Button for Quick Capture (layered on top) */}
-      {activeOverlay === "none" && (
-        <TouchableOpacity
-          style={[
-            styles.floatingCaptureBtn,
-            {
+      {showChrome && (
+        <>
+          {/* One FAB, one primary action: capture. Positioned above the real
+              navigation inset rather than a fixed 28dp guess. */}
+          <Pressable
+            onPress={() => {
+              haptics.tap();
+              setCaptureOpen(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Add a receipt"
+            accessibilityHint="Scan a sample receipt, import one, or type the details yourself"
+            android_ripple={{ color: colors.scrim, borderless: false }}
+            style={({ pressed }) => ({
+              position: "absolute",
+              right: spacing.gutter + insets.right,
+              bottom: insets.bottom + spacing.xxxl + spacing.xl,
+              width: 56,
+              height: 56,
+              borderRadius: 16,
               backgroundColor: colors.primary,
-              shadowColor: isDark ? "#000" : "#146B55",
-            },
-          ]}
-          onPress={() => {
-            haptics.tap();
-            setIsCaptureModalOpen(true);
-          }}
-          activeOpacity={0.82}
-          accessibilityRole="button"
-          accessibilityLabel="Capture or Add Receipt"
-          accessibilityHint="Opens options to photograph a receipt, import a screenshot, or enter details manually"
-        >
-          <Text style={[styles.floatingCaptureIcon, { color: colors.primaryFg }]}>+</Text>
-        </TouchableOpacity>
+              alignItems: "center",
+              justifyContent: "center",
+              elevation: elevation.fab,
+              opacity: pressed ? 0.9 : 1,
+            })}
+          >
+            <Icon name="add" size={26} color={colors.onPrimary} />
+          </Pressable>
+
+          <TabBar current={tab} onChange={openTab} />
+        </>
       )}
 
-      {/* Capture Modal */}
-      <CaptureModal visible={isCaptureModalOpen} onClose={() => setIsCaptureModalOpen(false)} />
+      <CaptureModal visible={captureOpen} onClose={() => setCaptureOpen(false)} />
 
-      {/* Onboarding & First-Run Guide Modal */}
       <OnboardingModal
-        visible={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-        onOpenSampleReceipt={() => {
-          setIsOnboardingOpen(false);
-          setCurrentTab("receipts");
+        visible={onboardingOpen}
+        onClose={closeOnboarding}
+        onStartCapture={() => {
+          closeOnboarding();
+          setCaptureOpen(true);
         }}
       />
     </View>
@@ -259,80 +199,14 @@ function MainApp() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <VaultProvider>
-        <ToastProvider>
-          <MainApp />
-        </ToastProvider>
-      </VaultProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <VaultProvider>
+          <SnackbarProvider>
+            <MainApp />
+          </SnackbarProvider>
+        </VaultProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  appContainer: {
-    flex: 1,
-  },
-  screenContent: {
-    flex: 1,
-  },
-  floatingCaptureBtn: {
-    position: "absolute",
-    bottom: Platform.OS === "android" ? 28 : 34,
-    alignSelf: "center",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  floatingCaptureIcon: {
-    fontSize: 32,
-    lineHeight: 36,
-    fontWeight: "600",
-  },
-  bottomNavContainer: {
-    borderTopWidth: 1,
-  },
-  bottomNav: {
-    flexDirection: "row",
-    height: 64,
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-  },
-  navCenterSpacer: {
-    width: 64,
-  },
-  navTab: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 4,
-    height: "100%",
-    minHeight: 48,
-  },
-  navTabActive: {
-    borderTopWidth: 2.5,
-  },
-  navIcon: {
-    fontSize: 20,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    opacity: 1,
-  },
-  navLabel: {
-    fontSize: 11,
-    marginTop: 2,
-    fontWeight: "500",
-  },
-  navLabelActive: {
-    fontWeight: "700",
-  },
-});

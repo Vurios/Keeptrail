@@ -5,7 +5,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from katibay_api.db import DatabaseRepository, get_db_repository
+from katibay_api.db import DatabaseRepository, PipelineCounters, get_db_repository
+from katibay_api.logging import logger
 
 router = APIRouter(tags=["Metrics & Telemetry"])
 
@@ -14,16 +15,9 @@ class MetricsCollector:
     """Collects real-time latency percentiles, error rates, and queue depths."""
 
     def __init__(self) -> None:
-        self.extraction_latencies_ms: list[float] = [
-            280.0,
-            320.0,
-            340.0,
-            410.0,
-            490.0,
-            580.0,
-            720.0,
-            950.0,
-        ]
+        # Starts empty on purpose. Seeding sample latencies would make a
+        # freshly started process report percentiles it never measured.
+        self.extraction_latencies_ms: list[float] = []
 
     def record_extraction_latency(self, latency_ms: float) -> None:
         self.extraction_latencies_ms.append(latency_ms)
@@ -56,21 +50,20 @@ async def get_system_metrics(
     """
     p50, p95 = metrics_collector.get_percentiles()
 
-    if hasattr(db_repo, "jobs"):
-        queue_depth = len(
-            [
-                j
-                for j in db_repo.jobs
-                if getattr(j, "status", "") in ("queued", "processing")
-            ]
-        )
-        total_receipts = len(getattr(db_repo, "receipts", []))
-        total_exceptions = len(getattr(db_repo, "exceptions", []))
-    else:
-        queue_depth = 0
-        total_receipts = 10
-        total_exceptions = 2
+    # Counters come from the repository itself. The previous version fell back
+    # to invented totals when the repository was not the in-memory one, which
+    # meant a real deployment reported numbers nobody measured.
+    try:
+        counters = await db_repo.get_pipeline_counters()
+        healthy = True
+    except Exception:
+        logger.exception("Failed to read pipeline counters for /metrics")
+        counters = PipelineCounters(queue_depth=0, total_receipts=0, total_exceptions=0)
+        healthy = False
 
+    queue_depth = counters.queue_depth
+    total_receipts = counters.total_receipts
+    total_exceptions = counters.total_exceptions
     exception_rate = round(total_exceptions / max(1, total_receipts), 4)
 
     metrics_data = {
@@ -80,7 +73,7 @@ async def get_system_metrics(
         "total_receipts_processed": total_receipts,
         "total_exceptions_raised": total_exceptions,
         "exception_rate": exception_rate,
-        "status": "healthy",
+        "status": "healthy" if healthy else "degraded",
     }
 
     if format == "prometheus":

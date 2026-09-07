@@ -1,740 +1,483 @@
-import React, { useState } from "react";
+/**
+ * Reminders.
+ *
+ * Three things were wrong here and all three were about honesty.
+ *
+ * The screen promised "never miss a deadline" while scheduling no OS
+ * notification, so it required the user to remember to check the thing that was
+ * supposed to remember for them. The subtitle now describes what it is.
+ *
+ * Nothing compared a due date to today, so an item three months overdue looked
+ * identical to one due next year. Items are now sorted by urgency and say how
+ * late or how soon they are.
+ *
+ * Every new reminder was force-linked to `receipts[0]`, so a reminder about a
+ * computer mouse displayed a stranger's lunch receipt underneath it. Linking is
+ * now optional and explicit.
+ */
+
+import React, { useCallback, useMemo, useState } from "react";
 import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  Modal,
-  TextInput,
-  Platform,
-  StatusBar,
+  Alert,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  View,
+  type ListRenderItemInfo,
 } from "react-native";
+import {
+  formatMoney,
+  type ActionRecord,
+  type ActionType,
+  type ReceiptRecord,
+} from "@katibay/shared";
+
 import { useTheme } from "../theme/ThemeContext";
-import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
-import { ActionRecord, ActionType } from "@katibay/shared";
+import { useSnackbar } from "../components/SnackbarContext";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  IconButton,
+  Notice,
+  OptionRow,
+  StatusBadge,
+  useContentInsets,
+} from "../components/primitives";
+import { Icon } from "../components/Icon";
+import { ACTION_TYPE_OPTIONS } from "../constants/options";
+import {
+  dueUrgency,
+  formatDate,
+  relativeDueLabel,
+  todayIso,
+  validateDateInput,
+} from "../utils/dates";
 import { haptics } from "../utils/haptics";
 
-export const RemindersScreen: React.FC = () => {
-  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
-  const { actions, toggleActionStatus, saveAction, receipts } = useLocalVault();
-  const { showToast } = useToast();
-  const [filter, setFilter] = useState<"pending" | "completed">("pending");
-  const [isAdding, setIsAdding] = useState(false);
+type Scope = "pending" | "completed";
 
-  // New action form state
+const URGENCY_TONE = {
+  overdue: "danger",
+  today: "warning",
+  soon: "warning",
+  later: "neutral",
+  unknown: "neutral",
+} as const;
+
+interface RemindersScreenProps {
+  onOpenReceipt: (receipt: ReceiptRecord) => void;
+}
+
+export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
+  const { colors, spacing } = useTheme();
+  const { vault, receipts, actions, saveAction, deleteAction, toggleActionStatus } =
+    useLocalVault();
+  const { showSnackbar } = useSnackbar();
+  const contentInsets = useContentInsets();
+
+  const [scope, setScope] = useState<Scope>("pending");
+  const [composerOpen, setComposerOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [actionType, setActionType] = useState<ActionType>("return_deadline");
   const [notes, setNotes] = useState("");
-  const [titleError, setTitleError] = useState<string | null>(null);
+  const [linkedReceiptId, setLinkedReceiptId] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
 
-  const filteredActions = actions.filter((a) => a.status === filter);
+  const visible = useMemo(() => {
+    const filtered = actions.filter((a) =>
+      scope === "pending" ? a.status !== "completed" : a.status === "completed",
+    );
+    // Soonest first for pending, most recently completed first otherwise.
+    return filtered.sort((a, b) =>
+      scope === "pending"
+        ? a.due_date.localeCompare(b.due_date)
+        : b.due_date.localeCompare(a.due_date),
+    );
+  }, [actions, scope]);
 
-  const handleTitleChange = (text: string) => {
-    setTitle(text);
-    if (text.trim()) setTitleError(null);
-  };
+  const overdueCount = useMemo(
+    () =>
+      actions.filter((a) => a.status !== "completed" && dueUrgency(a.due_date) === "overdue")
+        .length,
+    [actions],
+  );
 
-  const handleDateChange = (text: string) => {
-    setDueDate(text);
-    if (text.trim()) setDateError(null);
-  };
+  const resetComposer = useCallback(() => {
+    setTitle("");
+    setDueDate("");
+    setActionType("return_deadline");
+    setNotes("");
+    setLinkedReceiptId(null);
+    setDateError(null);
+    setTitleError(null);
+  }, []);
 
-  const handleAddAction = () => {
-    if (isSubmitting) return;
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false);
+    resetComposer();
+  }, [resetComposer]);
 
-    let hasErr = false;
+  const handleCreate = useCallback(() => {
     if (!title.trim()) {
-      setTitleError("Reminder title is required");
-      hasErr = true;
+      setTitleError("Give the reminder a name so you know what it is for.");
+      haptics.error();
+      return;
     }
-    if (!dueDate.trim()) {
-      setDateError("Due date is required (YYYY-MM-DD)");
-      hasErr = true;
-    }
-
-    if (hasErr) {
+    const dateProblem = validateDateInput(dueDate) ?? (dueDate.trim() ? null : "Pick a due date.");
+    if (dateProblem) {
+      setDateError(dateProblem);
       haptics.error();
       return;
     }
 
-    setIsSubmitting(true);
-    const newAction: ActionRecord = {
+    const now = new Date().toISOString();
+    const linked = linkedReceiptId ? vault.getReceipt(linkedReceiptId) : null;
+
+    saveAction({
       id: `act_${Date.now()}`,
-      receipt_id: receipts[0]?.id || "",
+      // Empty when the user did not link one. A relationship the user never
+      // asserted is never displayed.
+      receipt_id: linkedReceiptId ?? "",
       action_type: actionType,
       title: title.trim(),
       due_date: dueDate.trim(),
       status: "pending",
-      amount_minor_units: null,
-      currency: null,
+      amount_minor_units: linked?.total_minor_units ?? null,
+      currency: linked?.currency ?? null,
       notes: notes.trim() || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    saveAction(newAction);
-    haptics.success();
-    showToast({
-      type: "success",
-      title: "Reminder Created",
-      message: `Due ${newAction.due_date}: ${newAction.title}`,
+      created_at: now,
+      updated_at: now,
     });
 
-    setTitle("");
-    setDueDate("");
-    setNotes("");
-    setTitleError(null);
-    setDateError(null);
-    setIsSubmitting(false);
-    setIsAdding(false);
-  };
+    haptics.success();
+    showSnackbar({
+      message: `Reminder set for ${formatDate(
+        dueDate.trim(),
+      )}. Keeptrail shows it here — it does not send a notification.`,
+      tone: "success",
+      durationMs: 5000,
+    });
+    closeComposer();
+  }, [
+    title,
+    dueDate,
+    actionType,
+    notes,
+    linkedReceiptId,
+    vault,
+    saveAction,
+    showSnackbar,
+    closeComposer,
+  ]);
 
-  const handleToggle = (act: ActionRecord) => {
-    toggleActionStatus(act.id);
-    const willBeCompleted = act.status === "pending";
-    if (willBeCompleted) {
-      haptics.success();
-      showToast({
-        type: "success",
-        title: "Action Completed",
-        message: `Marked "${act.title}" as completed.`,
-      });
-    } else {
-      haptics.tap();
-      showToast({
-        type: "info",
-        title: "Action Reopened",
-        message: `Moved "${act.title}" back to pending.`,
-      });
-    }
-  };
-
-  const ACTION_TYPES: { type: ActionType; label: string }[] = [
-    { type: "return_deadline", label: "Return Deadline" },
-    { type: "reimbursement", label: "HMO / Work Reimbursement" },
-    { type: "refund_followup", label: "Refund Follow-up" },
-    { type: "custom_reminder", label: "Custom Reminder" },
-  ];
-
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-              Reminders & Deadlines
-            </Text>
-            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-              Never miss a return window or reimbursement deadline
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.addBtn,
-              {
-                backgroundColor: colors.primary,
+  const handleDelete = useCallback(
+    (action: ActionRecord) => {
+      Alert.alert("Delete this reminder?", `"${action.title}" will be removed.`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteAction(action.id);
+            haptics.warning();
+            showSnackbar({
+              message: "Reminder deleted.",
+              tone: "warning",
+              action: {
+                label: "Undo",
+                onPress: () => saveAction(action),
               },
-            ]}
-            onPress={() => {
-              haptics.tap();
-              setDueDate(new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]);
-              setIsAdding(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Add new reminder"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.addBtnText, { color: colors.primaryFg }]}>+ Add</Text>
-          </TouchableOpacity>
-        </View>
+            });
+          },
+        },
+      ]);
+    },
+    [deleteAction, saveAction, showSnackbar],
+  );
 
-        {/* Filter Tabs */}
-        <View style={styles.tabRow} accessibilityRole="tablist">
-          <TouchableOpacity
-            style={[
-              styles.tabChip,
-              {
-                backgroundColor: filter === "pending" ? colors.primary : colors.surface,
-                borderColor: filter === "pending" ? colors.primary : colors.border,
-              },
-            ]}
-            onPress={() => {
-              haptics.tap();
-              setFilter("pending");
-            }}
-            accessibilityRole="tab"
-            accessibilityLabel="Pending reminders tab"
-            accessibilityState={{ selected: filter === "pending" }}
-          >
-            <Text
-              style={[
-                styles.tabChipText,
-                { color: filter === "pending" ? colors.primaryFg : colors.textSecondary },
-                filter === "pending" && styles.tabChipTextActive,
-              ]}
-            >
-              Pending ({actions.filter((a) => a.status === "pending").length})
-            </Text>
-          </TouchableOpacity>
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<ActionRecord>) => {
+      const urgency = dueUrgency(item.due_date);
+      const completed = item.status === "completed";
+      const linked = item.receipt_id ? vault.getReceipt(item.receipt_id) : null;
+      const typeLabel =
+        ACTION_TYPE_OPTIONS.find((option) => option.value === item.action_type)?.label ??
+        "Reminder";
 
-          <TouchableOpacity
-            style={[
-              styles.tabChip,
-              {
-                backgroundColor: filter === "completed" ? colors.primary : colors.surface,
-                borderColor: filter === "completed" ? colors.primary : colors.border,
-              },
-            ]}
-            onPress={() => {
-              haptics.tap();
-              setFilter("completed");
-            }}
-            accessibilityRole="tab"
-            accessibilityLabel="Completed reminders tab"
-            accessibilityState={{ selected: filter === "completed" }}
-          >
-            <Text
-              style={[
-                styles.tabChipText,
-                { color: filter === "completed" ? colors.primaryFg : colors.textSecondary },
-                filter === "completed" && styles.tabChipTextActive,
-              ]}
-            >
-              Completed ({actions.filter((a) => a.status === "completed").length})
-            </Text>
-          </TouchableOpacity>
-        </View>
+      return (
+        <Card>
+          <View style={{ flexDirection: "row", gap: spacing.md }}>
+            <IconButton
+              icon={completed ? "done" : "check"}
+              tone={completed ? "primary" : "secondary"}
+              label={completed ? `Mark "${item.title}" as pending` : `Mark "${item.title}" done`}
+              onPress={() => {
+                toggleActionStatus(item.id);
+                haptics.tap();
+              }}
+            />
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {filteredActions.length === 0 ? (
-            <View
-              style={[
-                styles.emptyBox,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text style={styles.emptyIcon}>{filter === "pending" ? "⏰" : "✓"}</Text>
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                No {filter} reminders or deadlines
-              </Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                {filter === "pending"
-                  ? "Add a return window, warranty expiry, or reimbursement deadline."
-                  : "Completed actions and reminders will show up here."}
-              </Text>
-              {filter === "pending" && (
-                <TouchableOpacity
-                  style={[
-                    styles.emptyActionBtn,
-                    {
-                      backgroundColor: colors.surfaceAlt,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    haptics.tap();
-                    setDueDate(new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]);
-                    setIsAdding(true);
-                  }}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.emptyActionBtnText, { color: colors.primary }]}>
-                    Add a Reminder
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : (
-            filteredActions.map((act) => {
-              const linkedReceipt = receipts.find((r) => r.id === act.receipt_id);
+            <View style={{ flex: 1, gap: spacing.xs }}>
+              <AppText role="bodyStrong" numberOfLines={2}>
+                {item.title}
+              </AppText>
 
-              return (
-                <View
-                  key={act.id}
-                  style={[
-                    styles.actionCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={[
-                      styles.checkCircle,
-                      {
-                        borderColor:
-                          act.status === "completed"
-                            ? colors.status.success.border
-                            : colors.primary,
-                        backgroundColor:
-                          act.status === "completed" ? colors.status.success.bg : "transparent",
-                      },
-                    ]}
-                    onPress={() => handleToggle(act)}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: act.status === "completed" }}
-                    accessibilityLabel={`Mark "${act.title}" as ${
-                      act.status === "completed" ? "pending" : "completed"
-                    }`}
-                  >
-                    <Text
-                      style={[
-                        styles.checkCircleText,
-                        {
-                          color:
-                            act.status === "completed"
-                              ? colors.status.success.text
-                              : colors.primary,
-                        },
-                      ]}
-                    >
-                      {act.status === "completed" ? "✓" : ""}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.actionContent}>
-                    <Text
-                      style={[
-                        styles.actionTitle,
-                        { color: colors.textPrimary },
-                        act.status === "completed" && [
-                          styles.actionTitleCompleted,
-                          { color: colors.textMuted },
-                        ],
-                      ]}
-                    >
-                      {act.title}
-                    </Text>
-
-                    <View style={styles.metaRow}>
-                      <Text style={[styles.dueDate, { color: colors.primary }]}>
-                        📅 Due: {act.due_date}
-                      </Text>
-                      {linkedReceipt && (
-                        <Text
-                          style={[styles.linkedReceipt, { color: colors.textSecondary }]}
-                          numberOfLines={1}
-                        >
-                          • {linkedReceipt.merchant || linkedReceipt.title}
-                        </Text>
-                      )}
-                    </View>
-
-                    {act.notes && (
-                      <Text style={[styles.notesText, { color: colors.textSecondary }]}>
-                        {act.notes}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-
-        {/* Add Action Modal */}
-        <Modal
-          visible={isAdding}
-          animationType="slide"
-          presentationStyle="formSheet"
-          onRequestClose={() => setIsAdding(false)}
-        >
-          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-            >
               <View
-                style={[
-                  styles.modalHeader,
-                  {
-                    backgroundColor: colors.surface,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  flexWrap: "wrap",
+                }}
               >
-                <TouchableOpacity
-                  onPress={() => {
-                    haptics.tap();
-                    setIsAdding(false);
-                    setTitleError(null);
-                    setDateError(null);
-                  }}
-                  style={styles.modalHeaderBtn}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
-                </TouchableOpacity>
-                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>New Reminder</Text>
-                <TouchableOpacity
-                  onPress={handleAddAction}
-                  style={[
-                    styles.modalDoneBtn,
-                    {
-                      backgroundColor: colors.primary,
-                      opacity: isSubmitting ? 0.6 : 1,
-                    },
-                  ]}
-                  disabled={isSubmitting}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.modalDone, { color: colors.primaryFg }]}>
-                    {isSubmitting ? "Saving..." : "Save"}
-                  </Text>
-                </TouchableOpacity>
+                {completed ? (
+                  <StatusBadge label="Done" tone="success" icon="done" />
+                ) : (
+                  <StatusBadge
+                    label={relativeDueLabel(item.due_date)}
+                    tone={URGENCY_TONE[urgency]}
+                    icon={urgency === "overdue" ? "overdue" : "due"}
+                  />
+                )}
+                <AppText role="small" tone="muted">
+                  {typeLabel} · {formatDate(item.due_date)}
+                </AppText>
               </View>
 
-              <ScrollView
-                style={styles.modalForm}
-                contentContainerStyle={{ padding: 16 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Title *</Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: titleError ? colors.status.danger.border : colors.controlBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  placeholder="e.g. Return defective mouse to Octagon"
-                  placeholderTextColor={colors.textMuted}
-                  value={title}
-                  onChangeText={handleTitleChange}
-                />
-                {titleError && (
-                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
-                    {titleError}
-                  </Text>
-                )}
+              {item.notes ? (
+                <AppText role="small" tone="secondary" numberOfLines={2}>
+                  {item.notes}
+                </AppText>
+              ) : null}
 
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Due Date (YYYY-MM-DD) *
-                </Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: dateError ? colors.status.danger.border : colors.controlBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  placeholder="2026-09-15"
-                  placeholderTextColor={colors.textMuted}
-                  value={dueDate}
-                  onChangeText={handleDateChange}
+              {linked ? (
+                <Button
+                  label={`${linked.merchant ?? linked.title} · ${formatMoney(
+                    linked.total_minor_units,
+                    linked.currency,
+                  )}`}
+                  variant="text"
+                  icon="receipts"
+                  onPress={() => onOpenReceipt(linked)}
+                  style={{ paddingHorizontal: 0 }}
                 />
-                {dateError && (
-                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
-                    {dateError}
-                  </Text>
-                )}
+              ) : null}
+            </View>
 
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Reminder Type
-                </Text>
-                <View style={styles.typeCol}>
-                  {ACTION_TYPES.map((t) => (
-                    <TouchableOpacity
-                      key={t.type}
-                      style={[
-                        styles.typeOption,
-                        {
-                          backgroundColor:
-                            actionType === t.type ? colors.surfaceAlt : colors.surface,
-                          borderColor: actionType === t.type ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => {
-                        haptics.tap();
-                        setActionType(t.type);
-                      }}
-                      accessibilityRole="button"
-                    >
-                      <Text
-                        style={[
-                          styles.typeText,
-                          {
-                            color: actionType === t.type ? colors.primary : colors.textPrimary,
-                          },
-                          actionType === t.type && styles.typeTextSelected,
-                        ]}
-                      >
-                        {actionType === t.type ? "● " : "○ "}
-                        {t.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Notes (Optional)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    styles.notesInput,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.controlBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  placeholder="Details, requirements, or return policy terms..."
-                  placeholderTextColor={colors.textMuted}
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                />
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </SafeAreaView>
-        </Modal>
-      </View>
-    </SafeAreaView>
+            <IconButton
+              icon="trash"
+              tone="danger"
+              label={`Delete reminder "${item.title}"`}
+              onPress={() => handleDelete(item)}
+            />
+          </View>
+        </Card>
+      );
+    },
+    [spacing, vault, toggleActionStatus, onOpenReceipt, handleDelete],
   );
-};
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-  },
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  addBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    minHeight: 36,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  tabRow: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  tabChip: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 8,
-    minHeight: 36,
-    justifyContent: "center",
-  },
-  tabChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  tabChipTextActive: {
-    fontWeight: "700",
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 110,
-  },
-  emptyBox: {
-    alignItems: "center",
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginTop: 16,
-  },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 10,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  emptyActionBtn: {
-    marginTop: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  emptyActionBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  actionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    marginBottom: 10,
-    minHeight: 64,
-  },
-  checkCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  checkCircleText: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  actionContent: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  actionTitleCompleted: {
-    textDecorationLine: "line-through",
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  dueDate: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  linkedReceipt: {
-    fontSize: 12,
-    marginLeft: 6,
-    flex: 1,
-  },
-  notesText: {
-    fontSize: 12,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  modalSafe: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    height: 56,
-    borderBottomWidth: 1,
-  },
-  modalHeaderBtn: {
-    minWidth: 54,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  modalCancel: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  modalDoneBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    minHeight: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalDone: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  modalForm: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 12,
-    marginBottom: 6,
-  },
-  textInput: {
-    height: 48,
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-  },
-  inlineError: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  typeCol: {
-    gap: 8,
-    marginTop: 4,
-  },
-  typeOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    minHeight: 48,
-    justifyContent: "center",
-  },
-  typeText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  typeTextSelected: {
-    fontWeight: "700",
-  },
-  notesInput: {
-    height: 72,
-    paddingTop: 10,
-    textAlignVertical: "top",
-  },
-});
+  const keyExtractor = useCallback((item: ActionRecord) => item.id, []);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <AppBar
+        title="Reminders"
+        subtitle="Your deadline list. Open Keeptrail to check it — nothing is pushed to you."
+        actions={
+          <IconButton
+            icon="add"
+            tone="primary"
+            label="Add a reminder"
+            onPress={() => {
+              haptics.tap();
+              setDueDate(todayIso());
+              setComposerOpen(true);
+            }}
+          />
+        }
+      />
+
+      <View
+        style={{
+          flexDirection: "row",
+          gap: spacing.sm,
+          paddingHorizontal: spacing.gutter,
+          paddingTop: spacing.md,
+        }}
+      >
+        <Chip
+          label="Pending"
+          selected={scope === "pending"}
+          onPress={() => setScope("pending")}
+          count={actions.filter((a) => a.status !== "completed").length}
+        />
+        <Chip
+          label="Done"
+          selected={scope === "completed"}
+          onPress={() => setScope("completed")}
+          count={actions.filter((a) => a.status === "completed").length}
+        />
+      </View>
+
+      <FlatList
+        data={visible}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={contentInsets}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
+        ListHeaderComponent={
+          scope === "pending" && overdueCount > 0 ? (
+            <View style={{ marginBottom: spacing.md }}>
+              <Notice
+                tone="danger"
+                icon="overdue"
+                body={`${overdueCount} deadline${
+                  overdueCount === 1 ? " has" : "s have"
+                } already passed.`}
+              />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon={scope === "pending" ? "due" : "done"}
+            title={scope === "pending" ? "No deadlines tracked" : "Nothing completed yet"}
+            body={
+              scope === "pending"
+                ? "Add a return window, a refund to chase or a reimbursement to file, and it will appear here sorted by how soon it is due."
+                : "Reminders you tick off move here."
+            }
+            action={
+              scope === "pending"
+                ? {
+                    label: "Add a reminder",
+                    icon: "add",
+                    onPress: () => {
+                      setDueDate(todayIso());
+                      setComposerOpen(true);
+                    },
+                  }
+                : undefined
+            }
+          />
+        }
+      />
+
+      <Modal visible={composerOpen} animationType="slide" onRequestClose={closeComposer}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <AppBar
+            title="New reminder"
+            onBack={closeComposer}
+            actions={<Button label="Save" onPress={handleCreate} />}
+          />
+
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={{
+                padding: spacing.gutter,
+                paddingBottom: spacing.xxxl * 2,
+                gap: spacing.lg,
+              }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Notice
+                tone="info"
+                icon="info"
+                body="Keeptrail keeps this list on your phone and shows it when you open the app. This build does not send push notifications."
+              />
+
+              <Field
+                label="What do you need to do?"
+                value={title}
+                onChangeText={(text) => {
+                  setTitle(text);
+                  if (text.trim()) setTitleError(null);
+                }}
+                placeholder="e.g. Return the defective mouse"
+                error={titleError}
+                required
+              />
+
+              <Field
+                label="Due date"
+                value={dueDate}
+                onChangeText={(text) => {
+                  setDueDate(text);
+                  setDateError(validateDateInput(text));
+                }}
+                placeholder="YYYY-MM-DD"
+                keyboardType="numbers-and-punctuation"
+                error={dateError}
+                required
+              />
+
+              <OptionRow
+                label="Type"
+                options={ACTION_TYPE_OPTIONS}
+                value={actionType}
+                onChange={setActionType}
+              />
+
+              <View style={{ gap: spacing.sm }}>
+                <AppText role="smallStrong" tone="secondary">
+                  Link a receipt (optional)
+                </AppText>
+                {receipts.length === 0 ? (
+                  <AppText role="small" tone="muted">
+                    You have no saved receipts to link yet.
+                  </AppText>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
+                  >
+                    {receipts.slice(0, 20).map((receipt) => (
+                      <Chip
+                        key={receipt.id}
+                        label={receipt.merchant ?? receipt.title}
+                        selected={linkedReceiptId === receipt.id}
+                        onPress={() =>
+                          setLinkedReceiptId(linkedReceiptId === receipt.id ? null : receipt.id)
+                        }
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+                <AppText role="small" tone="muted">
+                  Leave this alone if the reminder is not about a specific receipt.
+                </AppText>
+              </View>
+
+              <Field
+                label="Notes"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Return policy terms, reference numbers, requirements"
+                multiline
+              />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
+  );
+}

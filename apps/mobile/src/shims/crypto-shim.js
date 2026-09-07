@@ -1,36 +1,71 @@
 /**
- * Metro React Native Crypto Shim
- * Provides randomBytes, createHash, pbkdf2Sync, createCipheriv, createDecipheriv
- * for the Keeptrail mobile bundle.
+ * React Native shim for the Node `crypto` API surface the shared package uses.
+ *
+ * Metro aliases `crypto` to this file (see metro.config.js), so THIS is the
+ * implementation that ships inside the APK — the shared package's tests run
+ * under Node and exercise Node's real crypto, never this code. Anything wrong
+ * here is invisible to that suite, which is why `crypto-shim.test.js` checks
+ * every primitive below against published test vectors.
+ *
+ * Provides: randomBytes, createHash("sha256"), pbkdf2Sync (HMAC-SHA256),
+ * createCipheriv/createDecipheriv for "aes-256-gcm".
  */
 
 const { Buffer } = require("buffer");
 
-function randomBytes(size) {
-  const buf = Buffer.alloc(size);
-  if (typeof globalThis !== "undefined" && globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buf);
-  } else {
-    for (let i = 0; i < size; i++) {
-      buf[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return buf;
+// --- CSPRNG ------------------------------------------------------------------
+
+let expoRandomBytes = null;
+try {
+  // expo-crypto delegates to the platform CSPRNG (SecRandomCopyBytes /
+  // java.security.SecureRandom).
+  expoRandomBytes = require("expo-crypto").getRandomBytes;
+} catch {
+  expoRandomBytes = null;
 }
 
-// Minimal pure JS SHA-256 implementation
+/**
+ * Cryptographically secure random bytes.
+ *
+ * There is deliberately no Math.random fallback. Hermes has no global
+ * `crypto`, so a fallback would be the path actually taken on device, and
+ * predictable salts and IVs silently destroy the guarantees of everything
+ * built on top of them. Failing loudly is the correct behaviour.
+ */
+function randomBytes(size) {
+  if (typeof globalThis !== "undefined" && globalThis.crypto?.getRandomValues) {
+    const out = Buffer.alloc(size);
+    globalThis.crypto.getRandomValues(out);
+    return out;
+  }
+  if (expoRandomBytes) {
+    return Buffer.from(expoRandomBytes(size));
+  }
+  throw new Error(
+    "No cryptographically secure random source is available. " +
+      "Keeptrail will not generate keys or nonces from a non-secure source.",
+  );
+}
+
+// --- SHA-256 -----------------------------------------------------------------
+
+const K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+function rightRotate(n, d) {
+  return (n >>> d) | (n << (32 - d));
+}
+
 function sha256Bytes(data) {
   const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  const K = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-  ];
 
   let H0 = 0x6a09e667,
     H1 = 0xbb67ae85,
@@ -48,7 +83,7 @@ function sha256Bytes(data) {
   bytes.copy(padded, 0);
   padded[bytes.length] = 0x80;
 
-  // Big-endian length
+  // Big-endian 64-bit length
   padded.writeUInt32BE(Math.floor(bitLen / 0x100000000), totalLen - 8);
   padded.writeUInt32BE(bitLen >>> 0, totalLen - 4);
 
@@ -113,24 +148,24 @@ function sha256Bytes(data) {
   return out;
 }
 
-function rightRotate(n, d) {
-  return (n >>> d) | (n << (32 - d));
-}
-
 function createHash(algo) {
-  let buffers = [];
+  if (String(algo).toLowerCase() !== "sha256") {
+    throw new Error(`crypto shim only implements sha256, received "${algo}"`);
+  }
+  const buffers = [];
   return {
     update(chunk) {
       buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return this;
     },
     digest(encoding) {
-      const combined = Buffer.concat(buffers);
-      const digestBuf = sha256Bytes(combined);
+      const digestBuf = sha256Bytes(Buffer.concat(buffers));
       return encoding === "hex" ? digestBuf.toString("hex") : digestBuf;
     },
   };
 }
+
+// --- HMAC-SHA256 and PBKDF2 --------------------------------------------------
 
 function hmacSha256(key, message) {
   let k = Buffer.isBuffer(key) ? key : Buffer.from(key);
@@ -155,9 +190,12 @@ function hmacSha256(key, message) {
 }
 
 function pbkdf2Sync(password, salt, iterations, keylen, digest) {
+  if (digest && String(digest).toLowerCase() !== "sha256") {
+    throw new Error(`crypto shim only implements pbkdf2 with sha256, received "${digest}"`);
+  }
   const p = Buffer.isBuffer(password) ? password : Buffer.from(password);
   const s = Buffer.isBuffer(salt) ? salt : Buffer.from(salt);
-  const hLen = 32; // SHA-256
+  const hLen = 32;
   const numBlocks = Math.ceil(keylen / hLen);
   const result = Buffer.alloc(keylen);
 
@@ -176,69 +214,305 @@ function pbkdf2Sync(password, salt, iterations, keylen, digest) {
     }
 
     const start = (i - 1) * hLen;
-    const len = Math.min(hLen, keylen - start);
-    t.copy(result, start, 0, len);
+    t.copy(result, start, 0, Math.min(hLen, keylen - start));
   }
 
   return result;
 }
 
-// AES-256-GCM authenticated cipher implementation (AES-CTR + GHASH authenticated encryption)
+// --- AES-256 block cipher ----------------------------------------------------
+// Textbook AES (FIPS-197). Constant-time behaviour is not claimed; the threat
+// model here is an attacker holding the exported archive file, not one timing
+// the phone's key schedule.
+
+const SBOX = new Uint8Array(256);
+const INV_SBOX = new Uint8Array(256);
+
+(function buildSboxes() {
+  const p = new Uint8Array(256);
+  const l = new Uint8Array(256);
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    p[i] = x;
+    l[x] = i;
+    x ^= (x << 1) ^ ((x & 0x80) !== 0 ? 0x11b : 0);
+    x &= 0xff;
+  }
+  // The exponent table has period 255, so wrapping index 255 back to 0 is what
+  // makes the inverse below correct for a = 1 (log 0).
+  p[255] = p[0];
+
+  const inverse = (a) => (a === 0 ? 0 : p[255 - l[a]]);
+
+  for (let i = 0; i < 256; i++) {
+    const inv = inverse(i);
+    let s = inv;
+    let acc = inv;
+    for (let t = 0; t < 4; t++) {
+      acc = ((acc << 1) | (acc >>> 7)) & 0xff;
+      s ^= acc;
+    }
+    s ^= 0x63;
+    SBOX[i] = s;
+    INV_SBOX[s] = i;
+  }
+})();
+
+function xtime(a) {
+  return ((a << 1) ^ ((a & 0x80) !== 0 ? 0x1b : 0)) & 0xff;
+}
+
+function gmul(a, b) {
+  let result = 0;
+  let x = a;
+  let y = b;
+  while (y) {
+    if (y & 1) result ^= x;
+    x = xtime(x);
+    y >>>= 1;
+  }
+  return result & 0xff;
+}
+
+function expandKey(key) {
+  // AES-256: 32-byte key, 14 rounds, 60 words.
+  const Nk = 8;
+  const Nr = 14;
+  const w = new Uint8Array(4 * 4 * (Nr + 1));
+  key.copy ? key.copy(w, 0, 0, 32) : w.set(key.subarray(0, 32), 0);
+
+  let rcon = 1;
+  for (let i = Nk; i < 4 * (Nr + 1); i++) {
+    const t = [w[(i - 1) * 4], w[(i - 1) * 4 + 1], w[(i - 1) * 4 + 2], w[(i - 1) * 4 + 3]];
+    if (i % Nk === 0) {
+      const tmp = t[0];
+      t[0] = SBOX[t[1]] ^ rcon;
+      t[1] = SBOX[t[2]];
+      t[2] = SBOX[t[3]];
+      t[3] = SBOX[tmp];
+      rcon = xtime(rcon);
+    } else if (i % Nk === 4) {
+      for (let j = 0; j < 4; j++) t[j] = SBOX[t[j]];
+    }
+    for (let j = 0; j < 4; j++) {
+      w[i * 4 + j] = w[(i - Nk) * 4 + j] ^ t[j];
+    }
+  }
+  return w;
+}
+
+/** Encrypts one 16-byte block in place into `out`. */
+function encryptBlock(roundKeys, input, out) {
+  const Nr = 14;
+  const state = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) state[i] = input[i] ^ roundKeys[i];
+
+  for (let round = 1; round <= Nr; round++) {
+    // SubBytes
+    for (let i = 0; i < 16; i++) state[i] = SBOX[state[i]];
+
+    // ShiftRows (state is column-major: index = col * 4 + row)
+    const t = Uint8Array.from(state);
+    for (let row = 1; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        state[col * 4 + row] = t[((col + row) % 4) * 4 + row];
+      }
+    }
+
+    // MixColumns (skipped in the final round)
+    if (round !== Nr) {
+      for (let col = 0; col < 4; col++) {
+        const a0 = state[col * 4];
+        const a1 = state[col * 4 + 1];
+        const a2 = state[col * 4 + 2];
+        const a3 = state[col * 4 + 3];
+        state[col * 4] = gmul(a0, 2) ^ gmul(a1, 3) ^ a2 ^ a3;
+        state[col * 4 + 1] = a0 ^ gmul(a1, 2) ^ gmul(a2, 3) ^ a3;
+        state[col * 4 + 2] = a0 ^ a1 ^ gmul(a2, 2) ^ gmul(a3, 3);
+        state[col * 4 + 3] = gmul(a0, 3) ^ a1 ^ a2 ^ gmul(a3, 2);
+      }
+    }
+
+    // AddRoundKey
+    for (let i = 0; i < 16; i++) state[i] ^= roundKeys[round * 16 + i];
+  }
+
+  for (let i = 0; i < 16; i++) out[i] = state[i];
+}
+
+// --- GHASH (GF(2^128) multiplication over the GCM field) ---------------------
+
+function ghashMultiply(x, y) {
+  // Right-shift based multiplication in GF(2^128) with reduction poly 0xe1.
+  const z = new Uint8Array(16);
+  const v = Uint8Array.from(y);
+
+  for (let i = 0; i < 128; i++) {
+    const bit = (x[i >>> 3] >>> (7 - (i & 7))) & 1;
+    if (bit) {
+      for (let j = 0; j < 16; j++) z[j] ^= v[j];
+    }
+    const lsb = v[15] & 1;
+    for (let j = 15; j > 0; j--) {
+      v[j] = ((v[j] >>> 1) | ((v[j - 1] & 1) << 7)) & 0xff;
+    }
+    v[0] >>>= 1;
+    if (lsb) v[0] ^= 0xe1;
+  }
+  return z;
+}
+
+function ghash(hashSubkey, data) {
+  let y = new Uint8Array(16);
+  for (let offset = 0; offset < data.length; offset += 16) {
+    const block = new Uint8Array(16);
+    const slice = data.subarray(offset, Math.min(offset + 16, data.length));
+    block.set(slice, 0);
+    for (let i = 0; i < 16; i++) y[i] ^= block[i];
+    y = ghashMultiply(y, hashSubkey);
+  }
+  return y;
+}
+
+function incrementCounter(counterBlock) {
+  for (let i = 15; i >= 12; i--) {
+    counterBlock[i] = (counterBlock[i] + 1) & 0xff;
+    if (counterBlock[i] !== 0) break;
+  }
+}
+
+function gcmCore(key, iv, input, isEncrypt, expectedTag) {
+  const roundKeys = expandKey(Buffer.isBuffer(key) ? key : Buffer.from(key));
+
+  // H = E(K, 0^128)
+  const hashSubkey = new Uint8Array(16);
+  encryptBlock(roundKeys, new Uint8Array(16), hashSubkey);
+
+  // J0: for a 96-bit IV, IV || 0^31 || 1
+  const j0 = new Uint8Array(16);
+  if (iv.length === 12) {
+    j0.set(iv, 0);
+    j0[15] = 1;
+  } else {
+    const lengthBlock = new Uint8Array(16);
+    const bitLen = iv.length * 8;
+    lengthBlock[12] = (bitLen >>> 24) & 0xff;
+    lengthBlock[13] = (bitLen >>> 16) & 0xff;
+    lengthBlock[14] = (bitLen >>> 8) & 0xff;
+    lengthBlock[15] = bitLen & 0xff;
+    const padded = new Uint8Array(Math.ceil(iv.length / 16) * 16);
+    padded.set(iv, 0);
+    const combined = new Uint8Array(padded.length + 16);
+    combined.set(padded, 0);
+    combined.set(lengthBlock, padded.length);
+    j0.set(ghash(hashSubkey, combined), 0);
+  }
+
+  // CTR over J0+1
+  const counter = Uint8Array.from(j0);
+  incrementCounter(counter);
+
+  const output = new Uint8Array(input.length);
+  const keyStream = new Uint8Array(16);
+  for (let offset = 0; offset < input.length; offset += 16) {
+    encryptBlock(roundKeys, counter, keyStream);
+    const blockLen = Math.min(16, input.length - offset);
+    for (let i = 0; i < blockLen; i++) {
+      output[offset + i] = input[offset + i] ^ keyStream[i];
+    }
+    incrementCounter(counter);
+  }
+
+  // Tag over the ciphertext (no additional authenticated data is used).
+  const ciphertext = isEncrypt ? output : input;
+  const padLen = (16 - (ciphertext.length % 16)) % 16;
+  // Final GHASH block is [bitlen(AAD)]_64 || [bitlen(C)]_64, big-endian. No
+  // additional authenticated data is used, so the first half stays zero.
+  const lengthBlock = new Uint8Array(16);
+  const cipherBits = ciphertext.length * 8;
+  const cipherBitsHigh = Math.floor(cipherBits / 0x100000000);
+  const cipherBitsLow = cipherBits >>> 0;
+  lengthBlock[8] = (cipherBitsHigh >>> 24) & 0xff;
+  lengthBlock[9] = (cipherBitsHigh >>> 16) & 0xff;
+  lengthBlock[10] = (cipherBitsHigh >>> 8) & 0xff;
+  lengthBlock[11] = cipherBitsHigh & 0xff;
+  lengthBlock[12] = (cipherBitsLow >>> 24) & 0xff;
+  lengthBlock[13] = (cipherBitsLow >>> 16) & 0xff;
+  lengthBlock[14] = (cipherBitsLow >>> 8) & 0xff;
+  lengthBlock[15] = cipherBitsLow & 0xff;
+
+  const ghashInput = new Uint8Array(ciphertext.length + padLen + 16);
+  ghashInput.set(ciphertext, 0);
+  ghashInput.set(lengthBlock, ciphertext.length + padLen);
+
+  const s = ghash(hashSubkey, ghashInput);
+  const tagMask = new Uint8Array(16);
+  encryptBlock(roundKeys, j0, tagMask);
+  const tag = Buffer.alloc(16);
+  for (let i = 0; i < 16; i++) tag[i] = s[i] ^ tagMask[i];
+
+  if (!isEncrypt && expectedTag) {
+    let diff = 0;
+    for (let i = 0; i < 16; i++) diff |= tag[i] ^ expectedTag[i];
+    if (diff !== 0) {
+      throw new Error("Unsupported state or unable to authenticate data");
+    }
+  }
+
+  return { output: Buffer.from(output), tag };
+}
+
+function assertAes256Gcm(algo) {
+  if (String(algo).toLowerCase() !== "aes-256-gcm") {
+    throw new Error(`crypto shim only implements aes-256-gcm, received "${algo}"`);
+  }
+}
+
 function createCipheriv(algo, key, iv) {
-  let plaintextChunks = [];
+  assertAes256Gcm(algo);
+  const chunks = [];
+  let authTag = null;
+
   return {
     update(chunk) {
-      plaintextChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return Buffer.alloc(0);
     },
     final() {
-      const plaintext = Buffer.concat(plaintextChunks);
-      // Key stream encryption using AES-CTR with SHA-256 stream mask
-      const ciphertext = Buffer.alloc(plaintext.length);
-      for (let i = 0; i < plaintext.length; i++) {
-        const blockNum = Math.floor(i / 32);
-        const blockKey = sha256Bytes(
-          Buffer.concat([key, iv, Buffer.from([blockNum & 0xff, (blockNum >> 8) & 0xff])]),
-        );
-        ciphertext[i] = plaintext[i] ^ blockKey[i % 32];
-      }
-      this._ciphertext = ciphertext;
-      this._authTag = hmacSha256(key, Buffer.concat([iv, ciphertext])).slice(0, 16);
-      return ciphertext;
+      const plaintext = Buffer.concat(chunks);
+      const { output, tag } = gcmCore(key, iv, plaintext, true, null);
+      authTag = tag;
+      return output;
     },
     getAuthTag() {
-      return this._authTag;
+      if (!authTag) {
+        throw new Error("getAuthTag() called before final()");
+      }
+      return authTag;
     },
   };
 }
 
 function createDecipheriv(algo, key, iv) {
-  let ciphertextChunks = [];
-  let authTag = Buffer.alloc(0);
+  assertAes256Gcm(algo);
+  const chunks = [];
+  let expectedTag = null;
+
   return {
     setAuthTag(tag) {
-      authTag = Buffer.isBuffer(tag) ? tag : Buffer.from(tag);
+      expectedTag = Buffer.isBuffer(tag) ? tag : Buffer.from(tag);
       return this;
     },
     update(chunk) {
-      ciphertextChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return Buffer.alloc(0);
     },
     final() {
-      const ciphertext = Buffer.concat(ciphertextChunks);
-      const expectedTag = hmacSha256(key, Buffer.concat([iv, ciphertext])).slice(0, 16);
-      if (authTag.length > 0 && !authTag.equals(expectedTag)) {
-        throw new Error("Unsupported state or unable to authenticate data");
+      if (!expectedTag) {
+        throw new Error("setAuthTag() must be called before final()");
       }
-      const plaintext = Buffer.alloc(ciphertext.length);
-      for (let i = 0; i < ciphertext.length; i++) {
-        const blockNum = Math.floor(i / 32);
-        const blockKey = sha256Bytes(
-          Buffer.concat([key, iv, Buffer.from([blockNum & 0xff, (blockNum >> 8) & 0xff])]),
-        );
-        plaintext[i] = ciphertext[i] ^ blockKey[i % 32];
-      }
-      return plaintext;
+      const ciphertext = Buffer.concat(chunks);
+      return gcmCore(key, iv, ciphertext, false, expectedTag).output;
     },
   };
 }

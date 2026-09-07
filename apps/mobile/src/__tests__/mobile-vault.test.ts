@@ -55,7 +55,7 @@ describe("Mobile Local Vault Operations", () => {
       deleted_at: null,
     });
 
-    const receipts = vault.listReceipts({ includeTrashed: false });
+    const receipts = vault.listReceipts({ trashScope: "active" });
     expect(receipts).toHaveLength(1);
     expect(receipts[0].merchant).toBe("Highland Coffee");
 
@@ -87,12 +87,12 @@ describe("Mobile Local Vault Operations", () => {
 
     // Move to trash
     expect(vault.moveToTrash(r.id)).toBe(true);
-    expect(vault.listReceipts({ includeTrashed: false })).toHaveLength(0);
-    expect(vault.listReceipts({ includeTrashed: true })).toHaveLength(1);
+    expect(vault.listReceipts({ trashScope: "active" })).toHaveLength(0);
+    expect(vault.listReceipts({ trashScope: "trashed" })).toHaveLength(1);
 
     // Restore
     expect(vault.restoreFromTrash(r.id)).toBe(true);
-    expect(vault.listReceipts({ includeTrashed: false })).toHaveLength(1);
+    expect(vault.listReceipts({ trashScope: "active" })).toHaveLength(1);
   });
 
   it("exports and restores AES-256-GCM encrypted backup containers", () => {

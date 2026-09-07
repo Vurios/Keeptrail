@@ -55,10 +55,13 @@ class HttpGeminiClient:
         model_id: str,
         api_key: str,
     ) -> str:
+        # The key travels in a header, not the query string: URLs end up in
+        # proxy logs, error traces and httpx's own request repr.
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model_id}:generateContent?key={api_key}"
+            f"{model_id}:generateContent"
         )
+        headers = {"x-goog-api-key": api_key}
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
 
         json_schema = ReceiptExtraction.model_json_schema()
@@ -85,7 +88,7 @@ class HttpGeminiClient:
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=headers)
             if response.status_code >= 500 or response.status_code == 429:
                 # Transient error
                 response.raise_for_status()

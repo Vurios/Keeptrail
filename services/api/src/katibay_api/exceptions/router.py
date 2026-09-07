@@ -4,9 +4,13 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from katibay_api.auth import AuthenticatedUser, get_current_user
+from katibay_api.auth import (
+    AuthenticatedUser,
+    assert_workspace_access,
+    get_current_user,
+)
 from katibay_api.db import DatabaseRepository, get_db_repository
 from katibay_api.extraction.schemas import ReceiptExtraction
 from katibay_api.verification.engine import verify_receipt
@@ -14,6 +18,22 @@ from katibay_api.verification.models import ActivityContext
 from katibay_api.verification.rules import parse_date
 
 router = APIRouter(tags=["Exceptions"])
+
+# Fields a reviewer may correct while resolving an exception. Everything else —
+# status, workspace_id, storage_path, sha256 — is pipeline state and must not be
+# settable from a request body.
+CORRECTABLE_RECEIPT_FIELDS = frozenset(
+    {
+        "merchant_name",
+        "merchant_tin",
+        "txn_date",
+        "or_number",
+        "subtotal",
+        "vat_amount",
+        "total_amount",
+        "payment_method",
+    }
+)
 
 
 class ExceptionResolutionRequest(BaseModel):
@@ -25,12 +45,30 @@ class ExceptionResolutionRequest(BaseModel):
     )
     correction: dict[str, Any] | None = Field(
         default=None,
-        description="Dictionary of corrected receipt fields.",
+        description=(
+            "Corrected receipt fields. Only reviewer-correctable fields are "
+            f"accepted: {sorted(CORRECTABLE_RECEIPT_FIELDS)}."
+        ),
     )
+
     reason: str | None = Field(
         default=None,
         description="Mandatory justification when waiving, or explanatory note.",
     )
+
+    @field_validator("correction")
+    @classmethod
+    def reject_unknown_fields(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return value
+        unknown = sorted(set(value) - CORRECTABLE_RECEIPT_FIELDS)
+        if unknown:
+            raise ValueError(
+                f"Fields cannot be corrected through this endpoint: {unknown}."
+            )
+        return value
 
 
 @router.get("/activities/{id}/exceptions")
@@ -58,14 +96,7 @@ async def get_activity_exceptions_endpoint(
         )
 
     # Check workspace membership
-    workspace_id = activity["workspace_id"]
-    if user.role_in(workspace_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"Access denied: User is not a member of " f"workspace {workspace_id}."
-            ),
-        )
+    assert_workspace_access(user, activity["workspace_id"])
 
     exceptions = await db.get_activity_exceptions(
         activity_id=id,
@@ -111,11 +142,18 @@ async def resolve_exception_endpoint(
         if activity:
             workspace_id = activity["workspace_id"]
 
-    if workspace_id and user.role_in(workspace_id) is None:
+    if workspace_id is None:
+        # An exception whose owning workspace cannot be resolved cannot be
+        # authorized against one either. Refuse rather than fall open.
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: User is not authorized in this workspace.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Exception {id} is not linked to a resolvable receipt or "
+                "activity, so its workspace cannot be authorized."
+            ),
         )
+
+    assert_workspace_access(user, workspace_id)
 
     before_state = {
         "id": str(exc["id"]),
@@ -152,16 +190,15 @@ async def resolve_exception_endpoint(
     }
 
     # 6. Write audit event
-    if workspace_id:
-        await db.insert_audit_event(
-            workspace_id=workspace_id,
-            actor_id=user.id,
-            entity_type="exceptions",
-            entity_id=id,
-            action=f"exception_{target_status}",
-            before=before_state,
-            after=after_state,
-        )
+    await db.insert_audit_event(
+        workspace_id=workspace_id,
+        actor_id=user.id,
+        entity_type="exceptions",
+        entity_id=id,
+        action=f"exception_{target_status}",
+        before=before_state,
+        after=after_state,
+    )
 
     # 7. Re-run verification for receipt if attached
     reverification_report = None

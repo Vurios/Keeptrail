@@ -1,14 +1,19 @@
 {
   "name": "@katibay/mobile",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "index.ts",
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@katibay/shared": "workspace:*",
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "buffer": "^6.0.3",
     "expo": "~57.0.19",
+    "expo-crypto": "^57.0.2",
+    "expo-file-system": "^57.0.6",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "^5.9.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

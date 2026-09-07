@@ -307,3 +307,47 @@ def test_get_activity_exceptions_filtering(test_setup):
     )
     assert empty_resp.status_code == 200
     assert len(empty_resp.json()) == 0
+
+
+# ===========================================================================
+# Correction allowlist regression tests
+# ===========================================================================
+
+
+def test_correction_cannot_set_pipeline_fields(test_setup):
+    """A reviewer cannot promote a receipt by naming `status` as a correction."""
+    exc_id = test_setup["exception_id"]
+    token = test_setup["tokens"]["treasurer"]
+    db = test_setup["db"]
+
+    response = client.post(
+        f"/exceptions/{exc_id}/resolve",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "action": "resolve",
+            "correction": {"status": "approved", "workspace_id": str(uuid.uuid4())},
+            "reason": "Attempted privilege escalation via correction payload.",
+        },
+    )
+
+    assert response.status_code == 422
+    receipt = next(r for r in db.receipts if r.id == test_setup["receipt_id"])
+    assert receipt.status != "approved"
+
+
+def test_correction_cannot_inject_sql_through_field_name(test_setup):
+    """Column names in a correction are validated, never interpolated blindly."""
+    exc_id = test_setup["exception_id"]
+    token = test_setup["tokens"]["treasurer"]
+
+    response = client.post(
+        f"/exceptions/{exc_id}/resolve",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "action": "resolve",
+            "correction": {"total_amount = 1, status": "approved"},
+            "reason": "Attempted SQL injection through a correction key.",
+        },
+    )
+
+    assert response.status_code == 422

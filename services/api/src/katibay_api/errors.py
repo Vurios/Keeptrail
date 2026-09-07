@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field
 
 from katibay_api.logging import logger, request_id_ctx
 
+# Starlette renamed these two constants; resolve the spelling once here instead
+# of repeating a hasattr guard at every raise site.
+UNPROCESSABLE_STATUS: int = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
+CONTENT_TOO_LARGE_STATUS: int = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413)
+
 
 class ProblemDetails(BaseModel):
     """RFC-7807 Problem Details representation."""
@@ -107,11 +112,7 @@ def register_error_handlers(app: FastAPI) -> None:
             for err in exc.errors()
         ]
         return create_problem_response(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_CONTENT
-                if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT")
-                else 422
-            ),
+            status_code=UNPROCESSABLE_STATUS,
             title="Validation Error",
             detail=(
                 "The request entity could not be processed due to validation " "errors."

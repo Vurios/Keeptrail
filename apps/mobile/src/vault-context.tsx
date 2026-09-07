@@ -1,310 +1,332 @@
 /**
- * Keeptrail Local Vault State Context
- * 
- * Provides reactive local vault state to all mobile screens.
- * Initializes with realistic seed receipts so the local pilot is immediately testable.
+ * Local vault state for every screen.
+ *
+ * The vault is backed by app-private files, so what a tester saves is still
+ * there after Android reclaims the process. Previously this module built an
+ * in-memory vault at import time and seeded it with three invented receipts,
+ * which meant a first-run user opened the app to somebody else's data and lost
+ * their own on the next cold start.
+ *
+ * Sample data still exists, but only behind an explicit action in the guide —
+ * loading it is the user's choice and clearing it is one tap.
  */
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
-  LocalReceiptVault,
-  ReceiptRecord,
-  AttachmentRecord,
-  CollectionRecord,
-  ActionRecord,
-  StorageUsageStats,
   AskKeeptrailEngine,
-  AssistantResponse,
+  InMemoryVaultStore,
+  LocalReceiptVault,
+  computeSha256,
   createEncryptedBackup,
   restoreEncryptedBackup,
-  computeSha256,
+  type ActionRecord,
+  type AssistantResponse,
+  type AttachmentRecord,
+  type CollectionRecord,
+  type ReceiptRecord,
+  type StorageUsageStats,
+  type VaultStore,
 } from "@katibay/shared";
+import { FileVaultStore } from "./storage/file-vault-store";
 
-interface VaultContextType {
+export interface BackupArchiveInfo {
+  name: string;
+  uri: string;
+  sizeBytes: number;
+}
+
+export interface RestoreOutcome {
+  receiptCount: number;
+  attachmentCount: number;
+}
+
+interface VaultContextValue {
   vault: LocalReceiptVault;
   receipts: ReceiptRecord[];
   collections: CollectionRecord[];
   actions: ActionRecord[];
   stats: StorageUsageStats;
+  /** Where the vault lives on this device, or null when storage is unavailable. */
+  vaultLocation: string | null;
+  /** Set when durable storage could not be opened; the UI must say so. */
+  storageError: string | null;
+
   refreshState: () => void;
   saveReceipt: (receipt: Omit<ReceiptRecord, "created_at" | "updated_at">) => ReceiptRecord;
+  saveAttachment: (attachment: AttachmentRecord, bytes: Uint8Array) => void;
+  getAttachments: (receiptId: string) => AttachmentRecord[];
+  getAttachmentBytes: (relativePath: string) => Uint8Array | null;
+  setReceiptCollections: (receiptId: string, collectionIds: string[]) => void;
   moveToTrash: (id: string) => boolean;
   restoreFromTrash: (id: string) => boolean;
   permanentlyDelete: (id: string) => boolean;
   emptyTrash: () => number;
   saveAction: (action: ActionRecord) => void;
+  deleteAction: (id: string) => void;
   toggleActionStatus: (id: string) => void;
-  saveCollection: (col: CollectionRecord) => void;
-  exportEncryptedBackup: (password: string) => Uint8Array;
-  restoreFromEncryptedBackup: (bytes: Uint8Array, password: string) => { receiptCount: number; attachmentCount: number };
+  saveCollection: (collection: CollectionRecord) => void;
+
+  /** Writes a real `.keeptrail` file and returns where it landed. */
+  exportEncryptedBackup: (password: string) => { uri: string; sizeBytes: number };
+  listBackupArchives: () => BackupArchiveInfo[];
+  restoreFromArchive: (uri: string, password: string) => RestoreOutcome;
+  deleteBackupArchive: (uri: string) => void;
+
+  loadSampleReceipts: () => number;
   queryAssistant: (prompt: string) => Promise<AssistantResponse>;
 }
 
-const VaultContext = createContext<VaultContextType | null>(null);
+const VaultContext = createContext<VaultContextValue | null>(null);
 
-// Shared singleton instance for the app session
-const globalVault = new LocalReceiptVault();
-
-// Seed initial realistic data for offline pilot testing
-function seedInitialData(vault: LocalReceiptVault) {
-  if (vault.listReceipts({ includeTrashed: true }).length > 0) return;
-
-  // Receipt 1: Jollibee Food
-  const rec1 = vault.saveReceipt({
-    id: "rec_jollibee_01",
-    title: "Team Lunch - Jollibee",
-    merchant: "Jollibee Foods Corp",
-    transaction_date: "2026-09-04",
-    currency: "PHP",
-    total_minor_units: 48500, // ₱485.00
-    subtotal_minor_units: 43304,
-    tax_minor_units: 5196,
-    document_type: "receipt",
-    review_status: "reviewed",
-    notes: "Chickenjoy and Peach Mango Pie",
-    purpose: "Team lunch meeting",
-    tags: ["food", "team"],
-    collection_ids: ["col_purchases"],
-    is_trashed: false,
-    deleted_at: null,
-  });
-
-  const dummyBytes1 = new TextEncoder().encode("JOLLIBEE_RECEIPT_IMAGE_CONTENT_SAMPLE");
-  vault.saveAttachment(
-    {
-      id: "att_jollibee_01",
-      receipt_id: rec1.id,
-      file_name: "jollibee_0904.jpg",
-      relative_path: "originals/2026/09/rec_jollibee_01.jpg",
-      mime_type: "image/jpeg",
-      file_size_bytes: dummyBytes1.length,
-      sha256_hash: computeSha256(dummyBytes1),
-      page_order: 1,
-      ocr_text: "JOLLIBEE FOODS CORP MAKATI BRANCH TOTAL DUE 485.00",
-      created_at: new Date().toISOString(),
-    },
-    dummyBytes1
-  );
-
-  // Receipt 2: Mercury Drug (Meds)
-  const rec2 = vault.saveReceipt({
-    id: "rec_mercury_02",
-    title: "Prescription Vitamins",
-    merchant: "Mercury Drug",
-    transaction_date: "2026-09-05",
-    currency: "PHP",
-    total_minor_units: 125000, // ₱1,250.00
-    subtotal_minor_units: 111607,
-    tax_minor_units: 13393,
-    document_type: "receipt",
-    review_status: "reviewed",
-    notes: "Official receipt kept for company HMO claim",
-    purpose: "Medical",
-    tags: ["medical", "reimbursement"],
-    collection_ids: ["col_work"],
-    is_trashed: false,
-    deleted_at: null,
-  });
-
-  const dummyBytes2 = new TextEncoder().encode("MERCURY_DRUG_RECEIPT_IMAGE_CONTENT_SAMPLE");
-  vault.saveAttachment(
-    {
-      id: "att_mercury_02",
-      receipt_id: rec2.id,
-      file_name: "mercury_0905.jpg",
-      relative_path: "originals/2026/09/rec_mercury_02.jpg",
-      mime_type: "image/jpeg",
-      file_size_bytes: dummyBytes2.length,
-      sha256_hash: computeSha256(dummyBytes2),
-      page_order: 1,
-      ocr_text: "MERCURY DRUG AYALA TOTAL AMOUNT 1250.00",
-      created_at: new Date().toISOString(),
-    },
-    dummyBytes2
-  );
-
-  // Action for Receipt 2: HMO Reimbursement Deadline
-  vault.saveAction({
-    id: "act_hmo_01",
-    receipt_id: rec2.id,
-    action_type: "reimbursement",
-    title: "Submit Mercury Drug receipt to HR for HMO claim",
-    due_date: "2026-09-15",
-    status: "pending",
-    amount_minor_units: 125000,
-    currency: "PHP",
-    notes: "HR deadline is 15th of the month",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
-
-  // Receipt 3: Unreviewed GCash Payment Screenshot
-  const rec3 = vault.saveReceipt({
-    id: "rec_gcash_03",
-    title: "GCash Transfer",
-    merchant: "GCash (Maria S.)",
-    transaction_date: "2026-09-06",
-    currency: "PHP",
-    total_minor_units: 85000, // ₱850.00
-    subtotal_minor_units: null,
-    tax_minor_units: null,
-    document_type: "payment_screenshot",
-    review_status: "unreviewed",
-    notes: "Payment for water refilling station delivery",
-    purpose: "Utilities",
-    tags: ["utilities", "screenshot"],
-    collection_ids: ["col_utilities"],
-    is_trashed: false,
-    deleted_at: null,
-  });
-
-  const dummyBytes3 = new TextEncoder().encode("GCASH_SCREENSHOT_IMAGE_CONTENT_SAMPLE");
-  vault.saveAttachment(
-    {
-      id: "att_gcash_03",
-      receipt_id: rec3.id,
-      file_name: "gcash_0906.png",
-      relative_path: "originals/2026/09/rec_gcash_03.png",
-      mime_type: "image/png",
-      file_size_bytes: dummyBytes3.length,
-      sha256_hash: computeSha256(dummyBytes3),
-      page_order: 1,
-      ocr_text: "GCash Transfer Successful Sent to Maria S. Amount PHP 850.00",
-      created_at: new Date().toISOString(),
-    },
-    dummyBytes3
-  );
-
-  // Mark initial backup clean status
-  vault.markBackupCompleted();
+/**
+ * Opens durable storage, falling back to a memory-only vault when the
+ * filesystem is unavailable. The fallback is reported, never hidden: a vault
+ * that silently stops persisting is the failure this whole module exists to
+ * prevent.
+ */
+function openVault(): {
+  vault: LocalReceiptVault;
+  store: VaultStore;
+  fileStore: FileVaultStore | null;
+  error: string | null;
+} {
+  try {
+    const fileStore = new FileVaultStore();
+    return { vault: new LocalReceiptVault(fileStore), store: fileStore, fileStore, error: null };
+  } catch (error) {
+    const store = new InMemoryVaultStore();
+    return {
+      vault: new LocalReceiptVault(store),
+      store,
+      fileStore: null,
+      error:
+        error instanceof Error
+          ? `Durable storage is unavailable (${error.message}). Records in this session will not survive closing the app.`
+          : "Durable storage is unavailable. Records in this session will not survive closing the app.",
+    };
+  }
 }
 
-seedInitialData(globalVault);
+/** Clearly fictional records, loaded only when the user asks for them. */
+function buildSampleReceipts(vault: LocalReceiptVault): number {
+  const now = new Date().toISOString();
+  const samples: Array<{
+    receipt: Omit<ReceiptRecord, "created_at" | "updated_at">;
+    ocrText: string;
+  }> = [
+    {
+      receipt: {
+        id: "sample_rec_coffee",
+        title: "Sample — Highland Coffee Roasters",
+        merchant: "Highland Coffee Roasters",
+        transaction_date: "2026-09-04",
+        currency: "PHP",
+        total_minor_units: 30240,
+        subtotal_minor_units: 27000,
+        tax_minor_units: 3240,
+        document_type: "receipt",
+        review_status: "reviewed",
+        notes: "Sample record. Delete it once you have saved a real receipt.",
+        purpose: "Client meeting",
+        tags: ["sample"],
+        collection_ids: ["col_purchases"],
+        is_trashed: false,
+        deleted_at: null,
+      },
+      ocrText:
+        "HIGHLAND COFFEE ROASTERS\nSM MEGAMALL\n1 ICED AMERICANO 150.00\n1 CROISSANT 120.00\nTOTAL 302.40",
+    },
+    {
+      receipt: {
+        id: "sample_rec_pharmacy",
+        title: "Sample — Pharmacy receipt",
+        merchant: "Sample Pharmacy",
+        transaction_date: "2026-09-05",
+        currency: "PHP",
+        total_minor_units: 125000,
+        subtotal_minor_units: null,
+        tax_minor_units: null,
+        document_type: "receipt",
+        review_status: "unreviewed",
+        notes: "Sample record showing a receipt that still needs review.",
+        purpose: "Medical reimbursement",
+        tags: ["sample"],
+        collection_ids: ["col_work"],
+        is_trashed: false,
+        deleted_at: null,
+      },
+      ocrText: "SAMPLE PHARMACY\nVITAMINS\nTOTAL AMOUNT 1250.00",
+    },
+  ];
 
-export function VaultProvider({ children }: { children: React.ReactNode }) {
+  let created = 0;
+  for (const sample of samples) {
+    if (vault.getReceipt(sample.receipt.id)) continue;
+    vault.saveReceipt(sample.receipt);
+    const bytes = new TextEncoder().encode(sample.ocrText);
+    vault.saveAttachment(
+      {
+        id: `att_${sample.receipt.id}`,
+        receipt_id: sample.receipt.id,
+        file_name: `${sample.receipt.id}.txt`,
+        relative_path: `originals/samples/${sample.receipt.id}.txt`,
+        mime_type: "text/plain",
+        file_size_bytes: bytes.length,
+        sha256_hash: computeSha256(bytes),
+        page_order: 1,
+        ocr_text: sample.ocrText,
+        created_at: now,
+      },
+      bytes,
+    );
+    created++;
+  }
+
+  if (created > 0) {
+    vault.saveAction({
+      id: "sample_act_reimbursement",
+      receipt_id: "sample_rec_pharmacy",
+      action_type: "reimbursement",
+      title: "Sample — submit pharmacy receipt for reimbursement",
+      due_date: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+      status: "pending",
+      amount_minor_units: 125000,
+      currency: "PHP",
+      notes: "Sample reminder. Delete it once you have added your own.",
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  return created;
+}
+
+export function VaultProvider({ children }: { children: ReactNode }) {
+  const handle = useRef(openVault()).current;
+  const vault = handle.vault;
+
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
   const [collections, setCollections] = useState<CollectionRecord[]>([]);
   const [actions, setActions] = useState<ActionRecord[]>([]);
-  const [stats, setStats] = useState<StorageUsageStats>(globalVault.getStorageUsageStats());
+  const [stats, setStats] = useState<StorageUsageStats>(() => vault.getStorageUsageStats());
 
-  const refreshState = () => {
-    setReceipts(globalVault.listReceipts({ includeTrashed: false }));
-    setCollections(globalVault.listCollections());
-    setActions(globalVault.listActions());
-    setStats(globalVault.getStorageUsageStats());
-  };
+  const refreshState = useCallback(() => {
+    setReceipts(vault.listReceipts({ trashScope: "active" }));
+    setCollections(vault.listCollections());
+    setActions(vault.listActions());
+    setStats(vault.getStorageUsageStats());
+  }, [vault]);
 
   useEffect(() => {
     refreshState();
-  }, []);
+  }, [refreshState]);
 
-  const saveReceipt = (receipt: Omit<ReceiptRecord, "created_at" | "updated_at">) => {
-    const saved = globalVault.saveReceipt(receipt);
-    refreshState();
-    return saved;
-  };
-
-  const moveToTrash = (id: string) => {
-    const ok = globalVault.moveToTrash(id);
-    refreshState();
-    return ok;
-  };
-
-  const restoreFromTrash = (id: string) => {
-    const ok = globalVault.restoreFromTrash(id);
-    refreshState();
-    return ok;
-  };
-
-  const permanentlyDelete = (id: string) => {
-    const ok = globalVault.permanentlyDeleteReceipt(id);
-    refreshState();
-    return ok;
-  };
-
-  const emptyTrash = () => {
-    const count = globalVault.emptyTrash();
-    refreshState();
-    return count;
-  };
-
-  const saveAction = (action: ActionRecord) => {
-    globalVault.saveAction(action);
-    refreshState();
-  };
-
-  const toggleActionStatus = (id: string) => {
-    const act = globalVault.listActions().find((a: ActionRecord) => a.id === id);
-    if (!act) return;
-    const newStatus = act.status === "completed" ? "pending" : "completed";
-    globalVault.updateActionStatus(id, newStatus);
-    refreshState();
-  };
-
-  const saveCollection = (col: CollectionRecord) => {
-    globalVault.saveCollection(col);
-    refreshState();
-  };
-
-  const exportEncryptedBackup = (password: string): Uint8Array => {
-    const payload = globalVault.getBackupPayload();
-    const encrypted = createEncryptedBackup(payload, password);
-    globalVault.markBackupCompleted();
-    refreshState();
-    return encrypted;
-  };
-
-  const restoreFromEncryptedBackup = (bytes: Uint8Array, password: string) => {
-    const restored = restoreEncryptedBackup(bytes, password);
-    globalVault.restoreFromPayload(restored, "overwrite");
-    refreshState();
-    return {
-      receiptCount: restored.manifest.receipt_count,
-      attachmentCount: restored.manifest.attachment_count,
+  const value = useMemo<VaultContextValue>(() => {
+    const withRefresh = <T,>(operation: () => T): T => {
+      const result = operation();
+      refreshState();
+      return result;
     };
-  };
 
-  const queryAssistant = async (prompt: string): Promise<AssistantResponse> => {
-    const engine = new AskKeeptrailEngine({
-      receipts: globalVault.listReceipts({ includeTrashed: false }),
-      collections: globalVault.listCollections(),
-      actions: globalVault.listActions(),
-      isModelAvailable: false, // Honestly labeled Basic Helper on mobile devices without native llama.cpp/Qwen loaded
-    });
-    return await engine.query(prompt);
-  };
+    return {
+      vault,
+      receipts,
+      collections,
+      actions,
+      stats,
+      vaultLocation: handle.fileStore?.location ?? null,
+      storageError: handle.error,
 
-  return (
-    <VaultContext.Provider
-      value={{
-        vault: globalVault,
-        receipts,
-        collections,
-        actions,
-        stats,
-        refreshState,
-        saveReceipt,
-        moveToTrash,
-        restoreFromTrash,
-        permanentlyDelete,
-        emptyTrash,
-        saveAction,
-        toggleActionStatus,
-        saveCollection,
-        exportEncryptedBackup,
-        restoreFromEncryptedBackup,
-        queryAssistant,
-      }}
-    >
-      {children}
-    </VaultContext.Provider>
-  );
+      refreshState,
+
+      saveReceipt: (receipt) => withRefresh(() => vault.saveReceipt(receipt)),
+      saveAttachment: (attachment, bytes) =>
+        withRefresh(() => vault.saveAttachment(attachment, bytes)),
+      getAttachments: (receiptId) => vault.getAttachmentsForReceipt(receiptId),
+      getAttachmentBytes: (relativePath) => vault.getFileBytes(relativePath),
+      setReceiptCollections: (receiptId, collectionIds) =>
+        withRefresh(() => vault.setReceiptCollections(receiptId, collectionIds)),
+      moveToTrash: (id) => withRefresh(() => vault.moveToTrash(id)),
+      restoreFromTrash: (id) => withRefresh(() => vault.restoreFromTrash(id)),
+      permanentlyDelete: (id) => withRefresh(() => vault.permanentlyDeleteReceipt(id)),
+      emptyTrash: () => withRefresh(() => vault.emptyTrash()),
+      saveAction: (action) => withRefresh(() => vault.saveAction(action)),
+      deleteAction: (id) => withRefresh(() => vault.deleteAction(id)),
+      toggleActionStatus: (id) =>
+        withRefresh(() => {
+          const action = vault.listActions().find((a) => a.id === id);
+          if (!action) return;
+          vault.updateActionStatus(id, action.status === "completed" ? "pending" : "completed");
+        }),
+      saveCollection: (collection) => withRefresh(() => vault.saveCollection(collection)),
+
+      exportEncryptedBackup: (password) => {
+        if (!handle.fileStore) {
+          throw new Error(
+            "Durable storage is unavailable on this device, so a backup file cannot be written.",
+          );
+        }
+        const bytes = createEncryptedBackup(vault.getBackupPayload(), password);
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const uri = handle.fileStore.writeBackupArchive(`keeptrail-${stamp}.keeptrail`, bytes);
+        vault.markBackupCompleted();
+        refreshState();
+        return { uri, sizeBytes: bytes.length };
+      },
+
+      listBackupArchives: () => handle.fileStore?.listBackupArchives() ?? [],
+
+      restoreFromArchive: (uri, password) => {
+        if (!handle.fileStore) {
+          throw new Error("Durable storage is unavailable on this device.");
+        }
+        const bytes = handle.fileStore.readBackupArchive(uri);
+        // Decryption and every checksum are verified before a single existing
+        // record is touched, so a bad archive cannot leave a half-restored
+        // vault behind.
+        const archive = restoreEncryptedBackup(bytes, password);
+        vault.restoreFromPayload(archive, "overwrite");
+        refreshState();
+        return {
+          receiptCount: archive.manifest.receipt_count,
+          attachmentCount: archive.manifest.attachment_count,
+        };
+      },
+
+      deleteBackupArchive: (uri) => handle.fileStore?.deleteBackupArchive(uri),
+
+      loadSampleReceipts: () => withRefresh(() => buildSampleReceipts(vault)),
+
+      queryAssistant: async (prompt) => {
+        const engine = new AskKeeptrailEngine({
+          receipts: vault.listReceipts({ trashScope: "active" }),
+          collections: vault.listCollections(),
+          actions: vault.listActions(),
+          // No neural model runtime ships in this build, so the engine runs its
+          // deterministic path and labels itself Basic Helper.
+          isModelAvailable: false,
+        });
+        return engine.query(prompt);
+      },
+    };
+  }, [vault, receipts, collections, actions, stats, refreshState, handle]);
+
+  return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
 }
 
-export function useLocalVault() {
-  const ctx = useContext(VaultContext);
-  if (!ctx) {
+export function useLocalVault(): VaultContextValue {
+  const context = useContext(VaultContext);
+  if (!context) {
     throw new Error("useLocalVault must be used within a VaultProvider");
   }
-  return ctx;
+  return context;
 }

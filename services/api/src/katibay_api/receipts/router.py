@@ -14,9 +14,15 @@ from fastapi import (
     status,
 )
 
-from katibay_api.auth import AuthenticatedUser, get_current_user
+from katibay_api.auth import (
+    AuthenticatedUser,
+    assert_workspace_access,
+    get_current_user,
+    require_workspace_member,
+)
 from katibay_api.config import settings
 from katibay_api.db import DatabaseRepository, get_db_repository
+from katibay_api.errors import UNPROCESSABLE_STATUS
 from katibay_api.ratelimit import RateLimitDependency
 from katibay_api.receipts.schemas import (
     BatchReceiptUploadResponse,
@@ -33,10 +39,10 @@ router = APIRouter(tags=["Receipts"])
     response_model=BatchReceiptUploadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload one or more receipt images or PDFs to a workspace",
-    dependencies=[Depends(lambda: None)],  # placeholder or direct dependency
 )
 async def upload_workspace_receipts(
     id: Annotated[uuid.UUID, Path(description="Workspace ID")],
+    user: Annotated[AuthenticatedUser, Depends(require_workspace_member)],
     files: Annotated[
         list[UploadFile],
         File(description="One or more receipt image/PDF files"),
@@ -45,20 +51,27 @@ async def upload_workspace_receipts(
         uuid.UUID | None,
         Form(description="Optional activity ID to associate"),
     ] = None,
-    uploaded_by: Annotated[
-        uuid.UUID | None,
-        Form(description="User ID performing upload"),
-    ] = None,
     _rate_limit: RateLimitDependency = None,
 ) -> BatchReceiptUploadResponse:
     """Accepts one or more receipt files (JPEG/PNG/HEIC/PDF, max 10 MB each).
 
+    Requires membership of the target workspace. Uploads are attributed to the
+    authenticated user; attribution is never taken from the request body.
     Protected by sliding-window rate limiting.
     """
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one file must be provided in the 'files' field.",
+        )
+
+    if len(files) > settings.max_files_per_upload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"A single request may carry at most "
+                f"{settings.max_files_per_upload} files; received {len(files)}."
+            ),
         )
 
     results: list[UploadReceiptItemResult] = []
@@ -73,7 +86,7 @@ async def upload_workspace_receipts(
             filename=filename,
             raw_bytes=file_bytes,
             declared_mime=declared_mime,
-            uploaded_by=uploaded_by,
+            uploaded_by=user.id,
             activity_id=activity_id,
         )
         results.append(result)
@@ -102,6 +115,10 @@ async def get_receipt_signed_url(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Receipt {id} was not found.",
         )
+
+    # Authentication alone is not authorization: a signed URL hands out the
+    # original document, so membership of the owning workspace is required.
+    assert_workspace_access(user, receipt["workspace_id"])
 
     storage_path = receipt.get("storage_path")
     if not storage_path:
@@ -143,24 +160,12 @@ async def approve_receipt_endpoint(
         )
 
     workspace_id = receipt["workspace_id"]
-    user_role = user.role_in(workspace_id)
-    if user_role not in ("owner", "treasurer"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Access denied: Approving receipts into the ledger requires "
-                "'owner' or 'treasurer' role."
-            ),
-        )
+    assert_workspace_access(user, workspace_id, allowed_roles=("owner", "treasurer"))
 
     activity_id = receipt.get("activity_id")
     if not activity_id:
         raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_CONTENT
-                if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT")
-                else 422
-            ),
+            status_code=UNPROCESSABLE_STATUS,
             detail="Cannot approve a receipt that is not bound to an activity.",
         )
 
@@ -189,7 +194,17 @@ async def approve_receipt_endpoint(
             matched_budget_line_id = bl["id"]
             break
 
-    amount = receipt.get("total_amount") or 0
+    # Rule 1: no LLM output becomes a financial total, and an unknown total is
+    # not zero. Booking a null amount as 0 would silently understate the ledger.
+    amount = receipt.get("total_amount")
+    if amount is None:
+        raise HTTPException(
+            status_code=UNPROCESSABLE_STATUS,
+            detail=(
+                "Cannot approve a receipt with no confirmed total. Resolve the "
+                "amount through review before approving it into the ledger."
+            ),
+        )
 
     # 1. Insert into ledger_entries
     ledger_entry = await db.insert_ledger_entry(

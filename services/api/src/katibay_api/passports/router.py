@@ -9,7 +9,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from katibay_api.auth import AuthenticatedUser, get_current_user
+from katibay_api.auth import (
+    AuthenticatedUser,
+    assert_workspace_access,
+    get_current_user,
+)
 from katibay_api.db import DatabaseRepository, get_db_repository
 from katibay_api.passports.scheduler import check_passport_expiries
 from katibay_api.reports.claim_packet import generate_claim_packet_pdf
@@ -47,6 +51,10 @@ async def promote_receipt_to_passport(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Receipt {id} not found.",
         )
+
+    assert_workspace_access(
+        current_user, receipt["workspace_id"], allowed_roles=("owner", "treasurer")
+    )
 
     # Check if a passport already exists for this receipt
     if hasattr(db_repo, "passports"):
@@ -96,6 +104,7 @@ async def list_workspace_passports(
     db_repo: Annotated[DatabaseRepository, Depends(get_db_repository)],
 ):
     """Lists all asset passports owned within a workspace."""
+    assert_workspace_access(current_user, id)
     return await db_repo.get_workspace_passports(id)
 
 
@@ -113,6 +122,8 @@ async def get_passport_details(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Passport {id} not found.",
         )
+
+    assert_workspace_access(current_user, passport["workspace_id"])
 
     claims = await db_repo.get_passport_claims(id)
     return {
@@ -135,6 +146,10 @@ async def file_passport_warranty_claim(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Passport {id} not found.",
         )
+
+    assert_workspace_access(
+        current_user, passport["workspace_id"], allowed_roles=("owner", "treasurer")
+    )
 
     # Temporary claim object for PDF generation
     temp_claim = {

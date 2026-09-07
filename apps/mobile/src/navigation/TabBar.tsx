@@ -1,0 +1,141 @@
+/**
+ * Bottom navigation.
+ *
+ * Four destinations, sized and padded against the real navigation-bar inset.
+ * The app draws edge-to-edge, and `SafeAreaView` from react-native applies no
+ * padding on Android, so the previous bar sat underneath the system gesture
+ * handle with its labels occluded.
+ */
+
+import React from "react";
+import { Pressable, Text, View, type TextStyle } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../theme/ThemeContext";
+import { Icon, type IconName } from "../components/Icon";
+
+export type TabKey = "home" | "receipts" | "reminders" | "vault";
+
+interface TabDefinition {
+  key: TabKey;
+  label: string;
+  icon: IconName;
+  activeIcon: IconName;
+  hint: string;
+}
+
+/**
+ * Vault is a destination, not a header affordance. It holds the only controls
+ * that decide whether a user's records survive, and it was previously reachable
+ * from one badge on one screen.
+ *
+ * Collections became a filter inside Receipts: a collection is a slice of the
+ * receipt list, not a peer of it.
+ */
+export const TABS: TabDefinition[] = [
+  {
+    key: "home",
+    label: "Home",
+    icon: "home",
+    activeIcon: "homeActive",
+    hint: "Search, review queue and recent receipts",
+  },
+  {
+    key: "receipts",
+    label: "Receipts",
+    icon: "receipts",
+    activeIcon: "receiptsActive",
+    hint: "Every saved receipt, filtered by collection or review state",
+  },
+  {
+    key: "reminders",
+    label: "Reminders",
+    icon: "reminders",
+    activeIcon: "remindersActive",
+    hint: "Return windows, refunds and reimbursement deadlines",
+  },
+  {
+    key: "vault",
+    label: "Vault",
+    icon: "vault",
+    activeIcon: "vaultActive",
+    hint: "Storage usage, encrypted backup and restore",
+  },
+];
+
+export function TabBar({
+  current,
+  onChange,
+}: {
+  current: TabKey;
+  onChange: (tab: TabKey) => void;
+}) {
+  const { colors, spacing, typography } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      accessibilityRole="tablist"
+      style={{
+        flexDirection: "row",
+        backgroundColor: colors.surface,
+        borderTopWidth: 1,
+        borderTopColor: colors.divider,
+        paddingBottom: insets.bottom,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }}
+    >
+      {TABS.map((tab) => {
+        const selected = tab.key === current;
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => onChange(tab.key)}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.label}
+            accessibilityHint={tab.hint}
+            accessibilityState={{ selected }}
+            android_ripple={{ color: colors.scrim }}
+            style={{
+              flex: 1,
+              minHeight: spacing.touch + spacing.md,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: spacing.sm,
+              gap: 2,
+            }}
+          >
+            <View
+              style={{
+                paddingHorizontal: spacing.lg,
+                paddingVertical: 3,
+                borderRadius: 999,
+                backgroundColor: selected ? colors.primaryContainer : "transparent",
+              }}
+            >
+              <Icon
+                name={selected ? tab.activeIcon : tab.icon}
+                size={22}
+                color={selected ? colors.onPrimaryContainer : colors.textSecondary}
+              />
+            </View>
+            <Text
+              style={[
+                typography.label as TextStyle,
+                {
+                  color: selected ? colors.textPrimary : colors.textSecondary,
+                  letterSpacing: 0.2,
+                  textTransform: "none",
+                },
+              ]}
+              maxFontSizeMultiplier={1.3}
+              numberOfLines={1}
+            >
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}

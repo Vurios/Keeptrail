@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from katibay_api.db import InMemoryRepository, set_db_repository
 from katibay_api.main import app
 from katibay_api.passports.scheduler import check_passport_expiries
-from tests.test_auth_and_middleware import generate_jwt
+from tests.helpers import auth_headers
 
 
 @pytest.fixture
@@ -57,11 +57,7 @@ def test_promote_receipt_to_passport(
         ),
     }
 
-    user_id = uuid.uuid4()
-    token = generate_jwt(user_id=user_id)
-    headers = {
-        "Authorization": f"Bearer {token}",
-    }
+    headers = auth_headers(workspace_id, role="treasurer")
 
     response = client.post(
         f"/receipts/{receipt_id}/promote",
@@ -126,11 +122,7 @@ def test_file_passport_claim_and_generate_packet(
     }
     test_repo.passports.append(passport_record)
 
-    user_id = uuid.uuid4()
-    token = generate_jwt(user_id=user_id)
-    headers = {
-        "Authorization": f"Bearer {token}",
-    }
+    headers = auth_headers(workspace_id, role="treasurer")
 
     claim_payload = {
         "fault_description": (

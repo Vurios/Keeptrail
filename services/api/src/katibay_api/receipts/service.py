@@ -4,13 +4,12 @@ import hashlib
 import mimetypes
 import uuid
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from katibay_api.config import settings
 from katibay_api.db import DatabaseRepository, get_db_repository
-from katibay_api.duplicates import (
-    evaluate_duplicate,
-)
+from katibay_api.duplicates import evaluate_duplicate
+from katibay_api.errors import CONTENT_TOO_LARGE_STATUS, UNPROCESSABLE_STATUS
 from katibay_api.preprocessing import preprocess_receipt_image
 from katibay_api.receipts.schemas import UploadReceiptItemResult
 from katibay_api.storage import StorageClientProtocol, get_storage_client
@@ -71,11 +70,7 @@ def normalize_mime_type(
         return "application/pdf"
 
     raise HTTPException(
-        status_code=(
-            status.HTTP_422_UNPROCESSABLE_CONTENT
-            if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT")
-            else 422
-        ),
+        status_code=UNPROCESSABLE_STATUS,
         detail=(
             f"Unsupported file format for '{filename}'. "
             "Allowed formats: JPEG, PNG, HEIC, PDF."
@@ -87,29 +82,28 @@ async def process_receipt_upload(
     workspace_id: uuid.UUID,
     filename: str,
     raw_bytes: bytes,
+    uploaded_by: uuid.UUID,
     declared_mime: str | None = None,
-    uploaded_by: uuid.UUID | None = None,
     activity_id: uuid.UUID | None = None,
     db_repo: DatabaseRepository | None = None,
     storage_client: StorageClientProtocol | None = None,
 ) -> UploadReceiptItemResult:
     """Processes an uploaded receipt file through validation, storage,
     and deduplication.
+
+    ``uploaded_by`` is required: every stored receipt and audit event must be
+    attributable to a real actor, never to a placeholder identity.
     """
 
     db = db_repo or get_db_repository()
     storage = storage_client or get_storage_client()
-    user_id = uploaded_by or uuid.UUID("00000000-0000-0000-0000-000000000001")
+    user_id = uploaded_by
 
     # 1. Size Validation (max 10 MB per file)
     file_size = len(raw_bytes)
     if file_size > settings.max_upload_size_bytes:
         raise HTTPException(
-            status_code=(
-                status.HTTP_413_CONTENT_TOO_LARGE
-                if hasattr(status, "HTTP_413_CONTENT_TOO_LARGE")
-                else 413
-            ),
+            status_code=CONTENT_TOO_LARGE_STATUS,
             detail=(
                 f"File '{filename}' ({file_size} bytes) exceeds the maximum allowed "
                 f"size of {settings.max_upload_size_bytes} bytes (10 MB)."
@@ -143,11 +137,7 @@ async def process_receipt_upload(
         )
     except Exception as exc:
         raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_CONTENT
-                if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT")
-                else 422
-            ),
+            status_code=UNPROCESSABLE_STATUS,
             detail=f"Failed to preprocess receipt image '{filename}': {str(exc)}",
         ) from exc
 

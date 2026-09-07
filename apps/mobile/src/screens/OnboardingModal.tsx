@@ -20,6 +20,7 @@ interface OnboardingModalProps {
   visible: boolean;
   onClose: () => void;
   onOpenSampleReceipt?: () => void;
+  onStartCapture?: () => void;
 }
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5;

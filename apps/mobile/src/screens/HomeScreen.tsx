@@ -1,744 +1,392 @@
-import React, { useState } from "react";
+/**
+ * Home.
+ *
+ * Ordered by what a returning user actually needs: anything overdue or awaiting
+ * review first, then search, then the money summary, then recent records. The
+ * previous version stacked five full-width blocks — a security banner, search,
+ * an assistant card, a summary and a section header — before the first receipt,
+ * so content began two-thirds down the screen.
+ */
+
+import React, { useCallback, useMemo, useState } from "react";
+import { FlatList, Pressable, TextInput, View, type ListRenderItemInfo } from "react-native";
 import {
-  StyleSheet,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  RefreshControl,
-  Platform,
-  StatusBar,
-} from "react-native";
+  calculateReceiptTotals,
+  formatMoney,
+  type CurrencyTotal,
+  type ReceiptRecord,
+} from "@katibay/shared";
+
 import { useTheme } from "../theme/ThemeContext";
-import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
-import { formatMoney, calculateReceiptTotals, ReceiptRecord } from "@katibay/shared";
-import { haptics } from "../utils/haptics";
+import {
+  AppBar,
+  AppText,
+  Button,
+  Card,
+  EmptyState,
+  IconButton,
+  Money,
+  Notice,
+  Section,
+  useContentInsets,
+} from "../components/primitives";
+import { Icon } from "../components/Icon";
+import { ReceiptRow } from "../components/ReceiptRow";
+import { relativeDueLabel } from "../utils/dates";
+
+const RECENT_LIMIT = 8;
 
 interface HomeScreenProps {
   onOpenReceipt: (receipt: ReceiptRecord) => void;
-  onOpenAskKeeptrail: () => void;
-  onOpenStorageBackup: () => void;
-  onOpenOnboarding?: () => void;
-  onNavigateToTab: (tab: "receipts" | "collections" | "reminders") => void;
+  onOpenAsk: () => void;
+  onOpenGuide: () => void;
+  onOpenReviewQueue: () => void;
+  onOpenCollection: (collectionId: string) => void;
+  onOpenAllReceipts: () => void;
+  onStartCapture: () => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({
+export function HomeScreen({
   onOpenReceipt,
-  onOpenAskKeeptrail,
-  onOpenStorageBackup,
-  onOpenOnboarding,
-  onNavigateToTab,
-}) => {
-  const { colors, spacing, borderRadius, typography, isDark, toggleTheme } = useTheme();
-  const { receipts, stats, refreshState } = useLocalVault();
-  const { showToast } = useToast();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  onOpenAsk,
+  onOpenGuide,
+  onOpenReviewQueue,
+  onOpenCollection,
+  onOpenAllReceipts,
+  onStartCapture,
+}: HomeScreenProps) {
+  const { colors, spacing, radius, typography, mode, setMode, isDark } = useTheme();
+  const { vault, receipts, collections, actions, stats, storageError, loadSampleReceipts } =
+    useLocalVault();
+  const contentInsets = useContentInsets();
+  const [query, setQuery] = useState("");
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    refreshState();
-    haptics.tap();
-    setTimeout(() => {
-      setIsRefreshing(false);
-      showToast({
-        type: "success",
-        title: "Vault Refreshed",
-        message: `${stats.receiptCount} receipts loaded from local SQLite database.`,
-        duration: 2000,
-      });
-    }, 400);
-  };
+  // Search runs through the vault so it covers the same fields as the Receipts
+  // tab, including text scanned off the receipt itself. Two search boxes over
+  // one corpus with different field sets is how "Chickenjoy" used to match on
+  // one screen and not the other.
+  const results = useMemo(
+    () => (query.trim() ? vault.listReceipts({ searchQuery: query, trashScope: "active" }) : null),
+    [query, vault, receipts],
+  );
 
-  const filteredReceipts = searchQuery.trim()
-    ? receipts.filter((r) => {
-        const q = searchQuery.toLowerCase();
-        return (
-          (r.merchant || "").toLowerCase().includes(q) ||
-          r.title.toLowerCase().includes(q) ||
-          (r.purpose || "").toLowerCase().includes(q) ||
-          r.tags.some((t: string) => t.toLowerCase().includes(q))
-        );
-      })
-    : receipts;
+  const totals = useMemo(() => calculateReceiptTotals(receipts), [receipts]);
+  const currencyTotals = useMemo<CurrencyTotal[]>(
+    () =>
+      Object.values(totals.currencies).sort((a, b) => b.total_minor_units - a.total_minor_units),
+    [totals],
+  );
 
-  const totals = calculateReceiptTotals(receipts);
-  const currencyKeys = Object.keys(totals.currencies);
-  const primaryCurrency = currencyKeys[0] || "PHP";
-  const primaryTotalFormatted = totals.currencies[primaryCurrency]?.formatted || "₱0.00";
+  const overdue = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return actions.filter((a) => a.status === "pending" && a.due_date < today);
+  }, [actions]);
+
+  const dueSoon = useMemo(() => {
+    const today = new Date();
+    const horizon = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+    const todayIso = today.toISOString().slice(0, 10);
+    return actions.filter(
+      (a) => a.status === "pending" && a.due_date >= todayIso && a.due_date <= horizon,
+    );
+  }, [actions]);
+
+  const recent = useMemo(() => receipts.slice(0, RECENT_LIMIT), [receipts]);
+  const listData = results ?? recent;
+
+  const collectionsWithCounts = useMemo(
+    () =>
+      collections
+        .map((collection) => ({
+          collection,
+          count: receipts.filter((r) => r.collection_ids.includes(collection.id)).length,
+        }))
+        .filter((entry) => entry.count > 0)
+        .sort((a, b) => b.count - a.count),
+    [collections, receipts],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<ReceiptRecord>) => (
+      <ReceiptRow receipt={item} onPress={onOpenReceipt} />
+    ),
+    [onOpenReceipt],
+  );
+
+  const keyExtractor = useCallback((item: ReceiptRecord) => item.id, []);
+
+  const header = (
+    <View style={{ gap: spacing.lg }}>
+      {storageError ? (
+        <Notice
+          tone="danger"
+          icon="warning"
+          title="Records are not being saved"
+          body={storageError}
+        />
+      ) : null}
+
+      {/* Search is the first control because retrieval is the product's verb. */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.sm,
+          paddingHorizontal: spacing.md,
+          backgroundColor: colors.surface,
+          borderRadius: radius.control,
+          borderWidth: 1.5,
+          borderColor: colors.outline,
+          minHeight: spacing.touch,
+        }}
+      >
+        <Icon name="search" size={20} color={colors.textSecondary} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search merchant, item or note"
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="Search your receipts"
+          returnKeyType="search"
+          style={[typography.body, { flex: 1, color: colors.textPrimary, paddingVertical: 0 }]}
+        />
+        {query.length > 0 ? (
+          <IconButton icon="clear" label="Clear search" onPress={() => setQuery("")} />
+        ) : null}
+      </View>
+
+      {results ? (
+        <AppText role="small" tone="secondary">
+          {results.length === 0
+            ? `Nothing matches "${query.trim()}"`
+            : `${results.length} match${results.length === 1 ? "" : "es"} for "${query.trim()}"`}
+        </AppText>
+      ) : (
+        <>
+          {/* Anything time-sensitive outranks everything else on the screen. */}
+          {overdue.length > 0 ? (
+            <Notice
+              tone="danger"
+              icon="overdue"
+              title={`${overdue.length} deadline${overdue.length === 1 ? "" : "s"} passed`}
+              body={overdue
+                .slice(0, 2)
+                .map((a) => `${a.title} — ${relativeDueLabel(a.due_date)}`)
+                .join("\n")}
+            />
+          ) : null}
+
+          {stats.unreviewedCount > 0 ? (
+            <Card
+              onPress={onOpenReviewQueue}
+              accessibilityLabel={`${stats.unreviewedCount} receipts need review`}
+              accessibilityHint="Opens the receipts that still need checking"
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+                <Icon name="needsReview" size={22} color={colors.status.warning.text} />
+                <View style={{ flex: 1 }}>
+                  <AppText role="bodyStrong">
+                    {stats.unreviewedCount} receipt{stats.unreviewedCount === 1 ? "" : "s"} need
+                    review
+                  </AppText>
+                  <AppText role="small" tone="secondary">
+                    Scanned amounts have not been confirmed yet
+                  </AppText>
+                </View>
+                <Icon name="chevron" size={20} color={colors.textMuted} />
+              </View>
+            </Card>
+          ) : null}
+
+          {/* Money is the only place brass appears, so a total is recognisable
+              before it is read. Every currency is listed — the previous version
+              showed one and reported the rest as "+1 other currency", with the
+              amount unreachable anywhere in the app. */}
+          {currencyTotals.length > 0 ? (
+            <Card>
+              <AppText role="label" tone="muted">
+                SAVED ON THIS PHONE
+              </AppText>
+              <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+                {currencyTotals.map((total, index) => (
+                  <View
+                    key={total.currency}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Money
+                      formatted={total.formatted}
+                      size={index === 0 ? "headline" : "row"}
+                      tone="accent"
+                    />
+                    <AppText role="small" tone="secondary">
+                      {total.record_count} record{total.record_count === 1 ? "" : "s"}
+                      {currencyTotals.length > 1 ? ` · ${total.currency}` : ""}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+              {totals.total_records_unknown_amount > 0 ? (
+                <AppText role="small" tone="muted" style={{ marginTop: spacing.sm }}>
+                  {totals.total_records_unknown_amount} record
+                  {totals.total_records_unknown_amount === 1 ? " has" : "s have"} no amount recorded
+                  and {totals.total_records_unknown_amount === 1 ? "is" : "are"} not counted above.
+                </AppText>
+              ) : null}
+              {currencyTotals.length > 1 ? (
+                <AppText role="small" tone="muted" style={{ marginTop: spacing.xs }}>
+                  Currencies are kept separate and never added together.
+                </AppText>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {dueSoon.length > 0 ? (
+            <Notice
+              tone="warning"
+              icon="due"
+              body={`${dueSoon.length} deadline${
+                dueSoon.length === 1 ? "" : "s"
+              } within a week: ${dueSoon
+                .slice(0, 2)
+                .map((a) => a.title)
+                .join(", ")}`}
+            />
+          ) : null}
+
+          {collectionsWithCounts.length > 0 ? (
+            <Section title="Collections">
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                {collectionsWithCounts.map(({ collection, count }) => (
+                  <Pressable
+                    key={collection.id}
+                    onPress={() => onOpenCollection(collection.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${collection.name}, ${count} receipts`}
+                    android_ripple={{ color: colors.scrim }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: spacing.sm,
+                      minHeight: spacing.touch,
+                      paddingHorizontal: spacing.lg,
+                      borderRadius: radius.full,
+                      borderWidth: 1,
+                      borderColor: colors.divider,
+                      backgroundColor: colors.surface,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: collection.color,
+                      }}
+                    />
+                    <AppText role="smallStrong">{collection.name}</AppText>
+                    <AppText role="small" tone="muted">
+                      {count}
+                    </AppText>
+                  </Pressable>
+                ))}
+              </View>
+            </Section>
+          ) : null}
+
+          {recent.length > 0 ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginTop: spacing.lg,
+                minHeight: spacing.touch,
+              }}
+            >
+              <AppText role="label" tone="muted">
+                RECENT
+              </AppText>
+              {receipts.length > RECENT_LIMIT ? (
+                <Button
+                  label={`See all ${receipts.length}`}
+                  variant="text"
+                  onPress={onOpenAllReceipts}
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      )}
+    </View>
+  );
+
+  const empty = results ? (
+    <EmptyState
+      icon="search"
+      title="No matching receipt"
+      body="Search covers the merchant, your note and purpose, tags, and any text scanned off the receipt itself."
+    />
+  ) : (
+    <EmptyState
+      icon="receipts"
+      title="Nothing saved yet"
+      body="Add your first receipt and it is written to this phone straight away. Nothing is uploaded anywhere."
+      action={{ label: "Add a receipt", onPress: onStartCapture, icon: "add" }}
+    />
+  );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <AppBar
+        title="Keeptrail"
+        subtitle="Save it. Find it. Use it."
+        actions={
+          <>
+            <IconButton icon="assistant" label="Ask Keeptrail" onPress={onOpenAsk} tone="primary" />
+            <IconButton icon="guide" label="Open the guide" onPress={onOpenGuide} />
+            <IconButton
+              icon={isDark ? "light" : "dark"}
+              label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+              onPress={() => setMode(mode === "dark" ? "light" : "dark")}
+            />
+          </>
         }
-      >
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.brandTitle, { color: colors.primary }]}>KEEPTRAIL</Text>
-            <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
-              Save it. Find it. Use it.
-            </Text>
-          </View>
-          <View style={styles.headerRightActions}>
-            {/* Dark / Light Mode Toggle */}
-            <TouchableOpacity
-              style={[
-                styles.iconActionBtn,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={() => {
-                haptics.tap();
-                toggleTheme();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${isDark ? "light" : "dark"} mode`}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.iconActionText}>{isDark ? "☀️" : "🌙"}</Text>
-            </TouchableOpacity>
+      />
 
-            {onOpenOnboarding && (
-              <TouchableOpacity
-                style={[
-                  styles.guideBadge,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
-                ]}
-                onPress={() => {
-                  haptics.tap();
-                  onOpenOnboarding();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Onboarding Guide"
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <Text style={styles.storageBadgeIcon}>📖</Text>
-                <Text style={[styles.guideBadgeText, { color: colors.textPrimary }]}>Guide</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[
-                styles.storageBadge,
-                {
-                  backgroundColor: colors.surfaceAlt,
-                  borderColor: colors.status.success.border,
-                },
-              ]}
-              onPress={() => {
-                haptics.tap();
-                onOpenStorageBackup();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Storage and Backup Settings"
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.storageBadgeIcon}>🔒</Text>
-              <Text style={[styles.storageBadgeText, { color: colors.primary }]}>Vault</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Local Security Status Banner */}
-        <View
-          style={[
-            styles.securityBanner,
-            {
-              backgroundColor: colors.status.success.bg,
-              borderColor: colors.status.success.border,
-            },
-          ]}
-        >
-          <View style={[styles.securityDot, { backgroundColor: colors.status.success.text }]} />
-          <Text style={[styles.securityText, { color: colors.status.success.text }]}>
-            Saved on this phone • 100% private local storage
-          </Text>
-        </View>
-
-        {/* Search Input with Clear Button */}
-        <View
-          style={[
-            styles.searchContainer,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={[styles.searchInput, { color: colors.textPrimary }]}
-            placeholder="Search merchant, item, or note..."
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            accessibilityRole="search"
-            accessibilityLabel="Search receipts"
-            returnKeyType="search"
-          />
-          {searchQuery.trim().length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchQuery("")}
-              style={styles.clearSearchBtn}
-              accessibilityLabel="Clear search text"
-              accessibilityRole="button"
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={[styles.clearSearchText, { color: colors.textMuted }]}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Ask Keeptrail Quick Access Banner */}
-        <TouchableOpacity
-          style={[
-            styles.askBanner,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-          onPress={() => {
-            haptics.tap();
-            onOpenAskKeeptrail();
-          }}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Ask Keeptrail Assistant"
-        >
-          <View style={[styles.askIconCircle, { backgroundColor: colors.surfaceAlt }]}>
-            <Text style={styles.askIcon}>✨</Text>
-          </View>
-          <View style={styles.askTextCol}>
-            <Text style={[styles.askTitle, { color: colors.textPrimary }]}>Ask Keeptrail</Text>
-            <Text style={[styles.askSubtitle, { color: colors.textSecondary }]}>
-              Ask about spend, items, or return deadlines (on-device)
-            </Text>
-          </View>
-          <Text style={[styles.askChevron, { color: colors.textMuted }]}>›</Text>
-        </TouchableOpacity>
-
-        {/* Summary Spending Card */}
-        <View
-          style={[
-            styles.summaryCard,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <View style={styles.summaryRow}>
-            <View>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-                Total Tracked Spending
-              </Text>
-              <Text style={[styles.summaryValue, { color: colors.primary }]}>
-                {primaryTotalFormatted}
-              </Text>
-              {currencyKeys.length > 1 && (
-                <Text style={[styles.multiCurrencyNotice, { color: colors.textMuted }]}>
-                  +{currencyKeys.length - 1} other currency kept separate
-                </Text>
-              )}
+      <FlatList
+        data={listData}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          <View style={{ marginTop: results ? spacing.lg : spacing.section }}>{empty}</View>
+        }
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={contentInsets}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews
+        ListFooterComponent={
+          receipts.length === 0 && !results ? (
+            <View style={{ marginTop: spacing.md, alignItems: "flex-start" }}>
+              <Button
+                label="Load two sample receipts"
+                variant="text"
+                icon="document"
+                onPress={loadSampleReceipts}
+                accessibilityHint="Adds clearly labelled sample records you can delete at any time"
+              />
             </View>
-            <View style={styles.summaryRightCol}>
-              <Text style={[styles.summaryCountLabel, { color: colors.textSecondary }]}>
-                Receipts
-              </Text>
-              <Text style={[styles.summaryCountValue, { color: colors.textPrimary }]}>
-                {stats.receiptCount}
-              </Text>
-            </View>
-          </View>
-
-          {stats.unreviewedCount > 0 && (
-            <TouchableOpacity
-              style={[
-                styles.unreviewedAlert,
-                {
-                  backgroundColor: colors.status.warning.bg,
-                  borderColor: colors.status.warning.border,
-                },
-              ]}
-              onPress={() => {
-                haptics.tap();
-                onNavigateToTab("receipts");
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`${stats.unreviewedCount} receipts need review. Tap to review.`}
-            >
-              <Text style={styles.unreviewedAlertIcon}>⚠️</Text>
-              <Text style={[styles.unreviewedAlertText, { color: colors.status.warning.text }]}>
-                {stats.unreviewedCount} receipt(s) need review
-              </Text>
-              <Text style={[styles.unreviewedAlertAction, { color: colors.status.warning.text }]}>
-                Review ›
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Recent Receipts Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-            {searchQuery.trim() ? "Search Results" : "Recent Receipts"}
-          </Text>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.tap();
-              onNavigateToTab("receipts");
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="See all receipts"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.seeAllText, { color: colors.primary }]}>
-              See all ({receipts.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {filteredReceipts.length === 0 ? (
-          <View
-            style={[
-              styles.emptyContainer,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Text style={styles.emptyIcon}>📂</Text>
-            <Text style={[styles.emptyText, { color: colors.textPrimary }]}>
-              {searchQuery.trim() ? "No matching receipts" : "No receipts saved yet"}
-            </Text>
-            <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-              {searchQuery.trim()
-                ? `No receipts found matching "${searchQuery}". Try a different keyword.`
-                : "Tap the Capture (+) button below to photograph or add your first receipt."}
-            </Text>
-            {searchQuery.trim() && (
-              <TouchableOpacity
-                style={[
-                  styles.clearFilterBtn,
-                  {
-                    backgroundColor: colors.surfaceAlt,
-                    borderColor: colors.border,
-                  },
-                ]}
-                onPress={() => setSearchQuery("")}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.clearFilterBtnText, { color: colors.primary }]}>
-                  Clear Search Filter
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          filteredReceipts.slice(0, 6).map((receipt) => (
-            <TouchableOpacity
-              key={receipt.id}
-              style={[
-                styles.receiptCard,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={() => {
-                haptics.tap();
-                onOpenReceipt(receipt);
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={`Receipt from ${
-                receipt.merchant || receipt.title
-              }, amount ${formatMoney(receipt.total_minor_units, receipt.currency)}`}
-            >
-              <View style={styles.receiptTopRow}>
-                <Text
-                  style={[styles.receiptMerchant, { color: colors.textPrimary }]}
-                  numberOfLines={1}
-                >
-                  {receipt.merchant || receipt.title}
-                </Text>
-                <Text style={[styles.receiptAmount, { color: colors.primary }]}>
-                  {formatMoney(receipt.total_minor_units, receipt.currency)}
-                </Text>
-              </View>
-
-              <View style={styles.receiptBottomRow}>
-                <Text style={[styles.receiptDate, { color: colors.textSecondary }]}>
-                  {receipt.transaction_date || "No date"}
-                </Text>
-
-                <View style={styles.chipsRow}>
-                  <View
-                    style={[
-                      styles.statusChip,
-                      {
-                        backgroundColor:
-                          receipt.review_status === "reviewed"
-                            ? colors.status.success.bg
-                            : colors.status.warning.bg,
-                        borderColor:
-                          receipt.review_status === "reviewed"
-                            ? colors.status.success.border
-                            : colors.status.warning.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusChipText,
-                        {
-                          color:
-                            receipt.review_status === "reviewed"
-                              ? colors.status.success.text
-                              : colors.status.warning.text,
-                        },
-                      ]}
-                    >
-                      {receipt.review_status === "reviewed" ? "Reviewed" : "Needs Review"}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
-      </ScrollView>
-    </SafeAreaView>
+          ) : null
+        }
+      />
+    </View>
   );
-};
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-  },
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 110,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  brandTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-  },
-  brandTagline: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  headerRightActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  iconActionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  iconActionText: {
-    fontSize: 16,
-  },
-  guideBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    minHeight: 36,
-  },
-  guideBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  storageBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    minHeight: 36,
-  },
-  storageBadgeIcon: {
-    fontSize: 13,
-    marginRight: 4,
-  },
-  storageBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  securityBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  securityDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    marginRight: 8,
-  },
-  securityText: {
-    fontSize: 12,
-    fontWeight: "600",
-    flex: 1,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 48,
-    marginBottom: 12,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    height: "100%",
-  },
-  clearSearchBtn: {
-    padding: 6,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  clearSearchText: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  askBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    marginBottom: 14,
-  },
-  askIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  askIcon: {
-    fontSize: 20,
-  },
-  askTextCol: {
-    flex: 1,
-  },
-  askTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  askSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  askChevron: {
-    fontSize: 22,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
-  summaryCard: {
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    marginBottom: 18,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  summaryLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  summaryValue: {
-    fontSize: 26,
-    fontWeight: "800",
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-  multiCurrencyNotice: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  summaryRightCol: {
-    alignItems: "flex-end",
-  },
-  summaryCountLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  summaryCountValue: {
-    fontSize: 24,
-    fontWeight: "800",
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-  unreviewedAlert: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginTop: 12,
-  },
-  unreviewedAlertIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  unreviewedAlertText: {
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-  },
-  unreviewedAlertAction: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  seeAllText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  emptyContainer: {
-    alignItems: "center",
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginTop: 8,
-  },
-  emptyIcon: {
-    fontSize: 36,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  emptySubtext: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  clearFilterBtn: {
-    marginTop: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  clearFilterBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  receiptCard: {
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  receiptTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  receiptMerchant: {
-    fontSize: 15,
-    fontWeight: "600",
-    flex: 1,
-    marginRight: 10,
-  },
-  receiptAmount: {
-    fontSize: 16,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  receiptBottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  receiptDate: {
-    fontSize: 13,
-  },
-  chipsRow: {
-    flexDirection: "row",
-  },
-  statusChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  statusChipText: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-});
+}

@@ -10,6 +10,7 @@ export * from "./local-pilot/ocr-extractor";
 export * from "./local-pilot/assistant-engine";
 export * from "./local-pilot/backup-encryption";
 export * from "./local-pilot/local-vault";
+export * from "./local-pilot/vault-storage";
 
 /** Supported locales. Rule 5: 'en' and 'fil' only — no other locale is supported. */
 export const SUPPORTED_LOCALES = ["en", "fil"] as const;
@@ -19,4 +20,3 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 export function isSupportedLocale(value: string): value is Locale {
   return (SUPPORTED_LOCALES as readonly string[]).includes(value);
 }
-

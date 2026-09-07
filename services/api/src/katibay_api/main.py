@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from katibay_api import __version__
 from katibay_api.activities.router import router as activities_router
+from katibay_api.config import check_production_secrets, settings
 from katibay_api.errors import register_error_handlers
 from katibay_api.exceptions.router import router as exceptions_router
 from katibay_api.logging import setup_logging
@@ -42,6 +43,16 @@ if sentry_dsn:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan context manager for startup and shutdown."""
     setup_logging()
+
+    # Refuse to serve production traffic with development credentials. Failing
+    # at boot is far cheaper than discovering forged tokens in the audit log.
+    problems = check_production_secrets()
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in production with insecure configuration:\n  - "
+            + "\n  - ".join(problems)
+        )
+
     yield
 
 
@@ -61,12 +72,16 @@ register_error_handlers(app)
 # Register Middlewares (Order: Logging outermost, then Auth, then CORS)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SupabaseAuthMiddleware)
+# An explicit origin allowlist. A wildcard here would combine with
+# allow_credentials to echo back any requesting origin, which is the same as
+# having no cross-origin protection at all.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 

@@ -1,10 +1,15 @@
 """Helper utilities for generating test receipts and PDFs."""
 
 import io
+import uuid
+from datetime import UTC, datetime, timedelta
 
 import cv2
+import jwt
 import numpy as np
 from PIL import Image
+
+from katibay_api.config import settings
 
 DEFAULT_TEST_RECEIPT_TEXT = (
     "7-ELEVEN PHILIPPINES\nTOTAL: PHP 150.00\nTIN: 000-111-222-000\nOR#: 98765"
@@ -66,3 +71,40 @@ def create_synthetic_pdf() -> bytes:
     pdf_buf = io.BytesIO()
     pil_img.save(pdf_buf, format="PDF")
     return pdf_buf.getvalue()
+
+
+# --- Authentication helpers ---------------------------------------------------
+
+TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+
+
+def make_access_token(
+    user_id: uuid.UUID = TEST_USER_ID,
+    memberships: dict[uuid.UUID, str] | None = None,
+    email: str = "tester@example.com",
+    expires_in_sec: int = 3600,
+) -> str:
+    """Mints a Supabase-shaped access token signed with the configured secret."""
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "aud": settings.supabase_jwt_audience,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=expires_in_sec)).timestamp()),
+        "app_metadata": {
+            "memberships": {str(k): v for k, v in (memberships or {}).items()}
+        },
+        "user_metadata": {"locale": "en"},
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
+def auth_headers(
+    workspace_id: uuid.UUID | None = None,
+    role: str = "owner",
+    user_id: uuid.UUID = TEST_USER_ID,
+) -> dict[str, str]:
+    """Authorization header granting `role` in `workspace_id`."""
+    memberships = {workspace_id: role} if workspace_id else {}
+    return {"Authorization": f"Bearer {make_access_token(user_id, memberships)}"}

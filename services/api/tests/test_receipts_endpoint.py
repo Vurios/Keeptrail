@@ -10,7 +10,12 @@ from katibay_api.config import settings
 from katibay_api.db import InMemoryRepository, set_db_repository
 from katibay_api.main import app
 from katibay_api.storage import InMemoryStorageClient, set_storage_client
-from tests.helpers import create_synthetic_pdf, create_synthetic_receipt
+from tests.helpers import (
+    TEST_USER_ID,
+    auth_headers,
+    create_synthetic_pdf,
+    create_synthetic_receipt,
+)
 
 client = TestClient(app)
 
@@ -41,6 +46,7 @@ def test_upload_single_receipt_success(setup_test_environment):
     response = client.post(
         f"/workspaces/{workspace_id}/receipts",
         files=[("files", ("receipt.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+        headers=auth_headers(workspace_id),
     )
 
     assert response.status_code == 201
@@ -93,6 +99,7 @@ def test_upload_exact_duplicate_creates_one_job_and_one_exception(
                 ("receipt_1.jpg", io.BytesIO(receipt_bytes), "image/jpeg"),
             )
         ],
+        headers=auth_headers(workspace_id),
     )
     assert res1.status_code == 201
     item1 = res1.json()["items"][0]
@@ -113,6 +120,7 @@ def test_upload_exact_duplicate_creates_one_job_and_one_exception(
                 ("receipt_copy.jpg", io.BytesIO(receipt_bytes), "image/jpeg"),
             )
         ],
+        headers=auth_headers(workspace_id),
     )
     assert res2.status_code == 201
     item2 = res2.json()["items"][0]
@@ -151,6 +159,7 @@ def test_rotated_rephotograph_caught_as_duplicate_exception(
     res1 = client.post(
         f"/workspaces/{workspace_id}/receipts",
         files=[("files", ("grab_orig.jpg", io.BytesIO(original_bytes), "image/jpeg"))],
+        headers=auth_headers(workspace_id),
     )
     assert res1.status_code == 201
     item1 = res1.json()["items"][0]
@@ -166,6 +175,7 @@ def test_rotated_rephotograph_caught_as_duplicate_exception(
                 ("grab_rotated.jpg", io.BytesIO(rotated_bytes), "image/jpeg"),
             )
         ],
+        headers=auth_headers(workspace_id),
     )
     assert res2.status_code == 201
     item2 = res2.json()["items"][0]
@@ -209,6 +219,7 @@ def test_upload_multiple_files_in_batch(setup_test_environment):
             ("files", ("receipt2.png", io.BytesIO(file2), "image/png")),
             ("files", ("receipt3.pdf", io.BytesIO(file3_pdf), "application/pdf")),
         ],
+        headers=auth_headers(workspace_id),
     )
 
     assert response.status_code == 201
@@ -226,6 +237,7 @@ def test_upload_file_exceeding_10mb_rejected():
     response = client.post(
         f"/workspaces/{workspace_id}/receipts",
         files=[("files", ("huge_receipt.jpg", io.BytesIO(huge_bytes), "image/jpeg"))],
+        headers=auth_headers(workspace_id),
     )
 
     assert response.status_code == 413
@@ -240,6 +252,7 @@ def test_upload_unsupported_file_type_rejected():
     response = client.post(
         f"/workspaces/{workspace_id}/receipts",
         files=[("files", ("notes.txt", io.BytesIO(txt_bytes), "text/plain"))],
+        headers=auth_headers(workspace_id),
     )
 
     assert response.status_code == 422
@@ -258,6 +271,7 @@ def test_duplicates_isolated_by_workspace(setup_test_environment):
     res_a = client.post(
         f"/workspaces/{workspace_a}/receipts",
         files=[("files", ("rec.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+        headers=auth_headers(workspace_a),
     )
     assert res_a.status_code == 201
     assert res_a.json()["items"][0]["is_duplicate"] is False
@@ -266,9 +280,87 @@ def test_duplicates_isolated_by_workspace(setup_test_environment):
     res_b = client.post(
         f"/workspaces/{workspace_b}/receipts",
         files=[("files", ("rec.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+        headers=auth_headers(workspace_b),
     )
     assert res_b.status_code == 201
     # Should NOT be duplicate because it's a different workspace
     assert res_b.json()["items"][0]["is_duplicate"] is False
     assert len(repo.jobs) == 2
     assert len(repo.exceptions) == 0
+
+
+# --- Authorization regression tests -------------------------------------------
+
+
+def test_upload_without_token_is_rejected(setup_test_environment):
+    """An unauthenticated upload never reaches storage."""
+    repo, storage = setup_test_environment
+    workspace_id = uuid.uuid4()
+    receipt_bytes = create_synthetic_receipt()
+
+    response = client.post(
+        f"/workspaces/{workspace_id}/receipts",
+        files=[("files", ("receipt.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+    )
+
+    assert response.status_code == 401
+    assert len(repo.receipts) == 0
+    assert len(storage.files) == 0
+
+
+def test_upload_to_foreign_workspace_is_rejected(setup_test_environment):
+    """Membership of workspace A grants nothing in workspace B."""
+    repo, storage = setup_test_environment
+    member_workspace = uuid.uuid4()
+    target_workspace = uuid.uuid4()
+    receipt_bytes = create_synthetic_receipt()
+
+    response = client.post(
+        f"/workspaces/{target_workspace}/receipts",
+        files=[("files", ("receipt.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+        headers=auth_headers(member_workspace),
+    )
+
+    assert response.status_code == 403
+    assert len(repo.receipts) == 0
+    assert len(storage.files) == 0
+
+
+def test_upload_is_attributed_to_authenticated_user(setup_test_environment):
+    """uploaded_by comes from the token, not from the request body."""
+    repo, _storage = setup_test_environment
+    workspace_id = uuid.uuid4()
+    spoofed_user = uuid.uuid4()
+    receipt_bytes = create_synthetic_receipt()
+
+    response = client.post(
+        f"/workspaces/{workspace_id}/receipts",
+        files=[("files", ("receipt.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))],
+        data={"uploaded_by": str(spoofed_user)},
+        headers=auth_headers(workspace_id),
+    )
+
+    assert response.status_code == 201
+    assert repo.receipts[0].uploaded_by == TEST_USER_ID
+    assert repo.receipts[0].uploaded_by != spoofed_user
+
+
+def test_upload_batch_size_is_capped(setup_test_environment):
+    """A single request cannot carry an unbounded number of files."""
+    repo, _storage = setup_test_environment
+    workspace_id = uuid.uuid4()
+    receipt_bytes = create_synthetic_receipt()
+    over_cap = settings.max_files_per_upload + 1
+
+    response = client.post(
+        f"/workspaces/{workspace_id}/receipts",
+        files=[
+            ("files", (f"r{i}.jpg", io.BytesIO(receipt_bytes), "image/jpeg"))
+            for i in range(over_cap)
+        ],
+        headers=auth_headers(workspace_id),
+    )
+
+    assert response.status_code == 400
+    assert "at most" in response.json()["detail"]
+    assert len(repo.receipts) == 0

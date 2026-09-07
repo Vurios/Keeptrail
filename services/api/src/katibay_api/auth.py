@@ -28,13 +28,20 @@ class AuthenticatedUser:
 
 def decode_supabase_jwt(token: str, secret: str | None = None) -> dict:
     """Decodes and validates a Supabase JWT token."""
-    key = secret or settings.supabase_service_key
+    key = secret or settings.jwt_secret
     try:
         payload = jwt.decode(
             token,
             key,
             algorithms=["HS256"],
-            options={"verify_signature": True, "verify_exp": True},
+            audience=settings.supabase_jwt_audience,
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                # Supabase always sets aud; reject tokens that omit it rather
+                # than silently accepting a token minted for another service.
+                "require": ["exp", "sub"],
+            },
         )
         return payload
 
@@ -108,6 +115,47 @@ async def get_current_user(request: Request) -> AuthenticatedUser:
     )
     request.state.user = auth_user
     return auth_user
+
+
+def assert_workspace_access(
+    user: AuthenticatedUser,
+    workspace_id: uuid.UUID,
+    allowed_roles: Sequence[str] = ("owner", "treasurer", "member", "auditor"),
+) -> str:
+    """Raises 403 unless the user holds an allowed role in the workspace.
+
+    Used by endpoints whose workspace is only known after loading a record, so
+    the role cannot be resolved by ``require_role`` at dependency-wiring time.
+    Returns the resolved role.
+    """
+    role = user.role_in(workspace_id)
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: User is not a member of workspace {workspace_id}.",
+        )
+    if role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Access denied: Role '{role}' is not authorized. "
+                f"Required roles: {list(allowed_roles)}."
+            ),
+        )
+    return role
+
+
+async def require_workspace_member(
+    id: uuid.UUID,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> AuthenticatedUser:
+    """Path-parameter dependency gating any `/workspaces/{id}/...` route.
+
+    Binds to the `id` path parameter, so the workspace being addressed is the
+    one whose membership is checked.
+    """
+    assert_workspace_access(user, id)
+    return user
 
 
 def require_role(

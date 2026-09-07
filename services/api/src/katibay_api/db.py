@@ -65,6 +65,35 @@ class AuditEventRecord:
     occurred_at: datetime
 
 
+# Columns on public.receipts that an update may target. Mirrors migration 0002.
+UPDATABLE_RECEIPT_COLUMNS = frozenset(
+    {
+        "activity_id",
+        "status",
+        "merchant_name",
+        "merchant_tin",
+        "txn_date",
+        "or_number",
+        "subtotal",
+        "vat_amount",
+        "total_amount",
+        "payment_method",
+        "extraction_confidence",
+        "model_version",
+        "raw_extraction",
+    }
+)
+
+
+@dataclass
+class PipelineCounters:
+    """Live pipeline totals backing the /metrics endpoint."""
+
+    queue_depth: int
+    total_receipts: int
+    total_exceptions: int
+
+
 class DatabaseRepository(Protocol):
     """Protocol defining all database operations required by the receipt pipeline."""
 
@@ -215,6 +244,8 @@ class DatabaseRepository(Protocol):
     async def get_passport_claims(
         self, passport_id: uuid.UUID
     ) -> Sequence[dict[str, Any]]: ...
+
+    async def get_pipeline_counters(self) -> PipelineCounters: ...
 
 
 class AsyncpgRepository:
@@ -622,6 +653,13 @@ class AsyncpgRepository:
             r = await self.get_receipt(receipt_id)
             return r or {}
 
+        # Column names cannot be bound as parameters, so they are interpolated.
+        # Validating them against the known schema is what keeps that safe: an
+        # unchecked key here would be SQL injected straight into the statement.
+        unknown = sorted(set(fields) - UPDATABLE_RECEIPT_COLUMNS)
+        if unknown:
+            raise ValueError(f"Unknown receipt columns: {unknown}")
+
         set_clauses = []
         values: list[Any] = [receipt_id]
         for k, v in fields.items():
@@ -634,8 +672,9 @@ class AsyncpgRepository:
             WHERE id = $1
             RETURNING id, workspace_id, activity_id, uploaded_by, storage_path,
                       sha256, perceptual_hash, status::text, merchant_name,
-                      merchant_tin, txn_date, total_amount, category,
-                      confidence, created_at, updated_at
+                      merchant_tin, txn_date, or_number, subtotal, vat_amount,
+                      total_amount, payment_method, extraction_confidence,
+                      model_version, created_at, updated_at
         """
         row = await pool.fetchrow(query, *values)
         return dict(row) if row else {}
@@ -870,6 +909,23 @@ class AsyncpgRepository:
             passport_id,
         )
         return [dict(r) for r in rows]
+
+    async def get_pipeline_counters(self) -> PipelineCounters:
+        pool = await self.get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT
+              (SELECT count(*) FROM public.jobs
+                 WHERE status IN ('queued', 'processing'))      AS queue_depth,
+              (SELECT count(*) FROM public.receipts)            AS total_receipts,
+              (SELECT count(*) FROM public.exceptions)          AS total_exceptions
+            """
+        )
+        return PipelineCounters(
+            queue_depth=int(row["queue_depth"]),
+            total_receipts=int(row["total_receipts"]),
+            total_exceptions=int(row["total_exceptions"]),
+        )
 
 
 class InMemoryRepository:
@@ -1417,8 +1473,29 @@ class InMemoryRepository:
     ) -> Sequence[dict[str, Any]]:
         return [c for c in self.claims if c["passport_id"] == passport_id]
 
+    async def get_pipeline_counters(self) -> PipelineCounters:
+        return PipelineCounters(
+            queue_depth=len(
+                [j for j in self.jobs if j.status in ("queued", "processing")]
+            ),
+            total_receipts=len(self.receipts),
+            total_exceptions=len(self.exceptions),
+        )
 
-_db_repo: DatabaseRepository = InMemoryRepository()
+
+def _build_default_repository() -> DatabaseRepository:
+    """Chooses the repository backing the running process.
+
+    The in-memory repository loses every row on restart, so it must never be
+    the silent default in a deployed environment. Outside production it stays
+    the default, which is what the test suite and local runs expect.
+    """
+    if settings.is_production:
+        return AsyncpgRepository(settings.supabase_db_url)
+    return InMemoryRepository()
+
+
+_db_repo: DatabaseRepository = _build_default_repository()
 
 
 def get_db_repository() -> DatabaseRepository:

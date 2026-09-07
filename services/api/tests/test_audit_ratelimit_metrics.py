@@ -12,7 +12,7 @@ from katibay_api.main import app
 from katibay_api.metrics import metrics_collector
 from katibay_api.ratelimit import upload_rate_limiter
 from katibay_api.storage import InMemoryStorageClient, set_storage_client
-from tests.helpers import create_synthetic_receipt
+from tests.helpers import auth_headers, create_synthetic_receipt
 from tests.test_auth_and_middleware import generate_jwt
 
 
@@ -120,8 +120,7 @@ def test_receipt_signed_url_with_60s_expiry(
     )()
     test_repo.receipts.append(receipt_record)
 
-    token = generate_jwt(user_id=user_id)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(workspace_id, role="member", user_id=user_id)
 
     response = client.get(f"/receipts/{receipt_id}/signed-url", headers=headers)
     assert response.status_code == 200
@@ -136,8 +135,7 @@ def test_upload_rate_limiter_exceeded(
 ) -> None:
     workspace_id = uuid.uuid4()
     user_id = uuid.uuid4()
-    token = generate_jwt(user_id=user_id)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(workspace_id, role="member", user_id=user_id)
 
     upload_rate_limiter.reset()
     upload_rate_limiter.max_requests = 3  # Lower threshold for this specific test
@@ -197,3 +195,49 @@ def test_metrics_endpoint_json_and_prometheus(
     assert "katibay_job_queue_depth" in prom_text
     assert "katibay_extraction_latency_p50_ms" in prom_text
     assert "katibay_exception_rate" in prom_text
+
+
+def test_signed_url_denied_for_non_member(
+    client: TestClient,
+    test_repo: InMemoryRepository,
+    test_storage: InMemoryStorageClient,
+) -> None:
+    """A signed URL hands out the original document, so membership is required."""
+    owning_workspace = uuid.uuid4()
+    other_workspace = uuid.uuid4()
+    receipt_id = uuid.uuid4()
+
+    test_repo.receipts.append(
+        type(
+            "ReceiptRecord",
+            (),
+            {
+                "id": receipt_id,
+                "workspace_id": owning_workspace,
+                "storage_path": "receipts/private.jpg",
+                "status": "verified",
+            },
+        )()
+    )
+
+    response = client.get(
+        f"/receipts/{receipt_id}/signed-url",
+        headers=auth_headers(other_workspace, role="owner"),
+    )
+
+    assert response.status_code == 403
+    assert "signed_url" not in response.json()
+
+
+def test_metrics_report_measured_values_only(
+    client: TestClient, test_repo: InMemoryRepository
+) -> None:
+    """A fresh process reports zeros, never seeded sample data."""
+    metrics_collector.extraction_latencies_ms.clear()
+
+    data = client.get("/metrics?format=json").json()
+
+    assert data["total_receipts_processed"] == 0
+    assert data["total_exceptions_raised"] == 0
+    assert data["extraction_latency_p50_ms"] == 0.0
+    assert data["extraction_latency_p95_ms"] == 0.0
