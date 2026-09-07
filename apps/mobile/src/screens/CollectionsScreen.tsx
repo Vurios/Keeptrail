@@ -516,6 +516,7 @@ const styles = StyleSheet.create({
   },
   modalSafe: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
   },
   modalHeader: {
     flexDirection: "row",
@@ -542,7 +543,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 16,
     borderRadius: 8,
-    minHeight: 36,
+    minHeight: 40,
     justifyContent: "center",
     alignItems: "center",
   },

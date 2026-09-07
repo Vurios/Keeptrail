@@ -134,3 +134,53 @@ describe("Haptics Utility Safety", () => {
     expect(() => haptics.error()).not.toThrow();
   });
 });
+
+describe("Receipt Editing Integrity & Robust Input Parsing", () => {
+  it("updates receipt title and details without corrupting existing vault record", () => {
+    const vault = new LocalReceiptVault();
+    const original = vault.saveReceipt({
+      id: "edit_test_1",
+      title: "Jollibee",
+      merchant: "Jollibee Foods Corp",
+      transaction_date: "2026-09-04",
+      currency: "PHP",
+      total_minor_units: 48500,
+      subtotal_minor_units: 43304,
+      tax_minor_units: 5196,
+      document_type: "receipt",
+      review_status: "reviewed",
+      notes: "Lunch",
+      purpose: "Team",
+      tags: ["food"],
+      collection_ids: ["col_purchases"],
+      is_trashed: false,
+      deleted_at: null,
+    });
+
+    const parsedAmount = parseMoneyToMinorUnits("520.50", "PHP");
+    const updated = vault.saveReceipt({
+      ...original,
+      title: "Jollibee BGC",
+      merchant: "Jollibee BGC",
+      total_minor_units: parsedAmount,
+      notes: "Updated lunch notes",
+    });
+
+    expect(updated.title).toBe("Jollibee BGC");
+    expect(updated.merchant).toBe("Jollibee BGC");
+    expect(updated.total_minor_units).toBe(52050);
+    expect(updated.subtotal_minor_units).toBe(43304);
+    expect(updated.created_at).toBe(original.created_at);
+  });
+
+  it("handles empty or blank amount strings cleanly without throwing NaN", () => {
+    const emptyParsed = parseMoneyToMinorUnits("", "PHP");
+    expect(emptyParsed).toBeNull();
+
+    const whitespaceParsed = parseMoneyToMinorUnits("   ", "PHP");
+    expect(whitespaceParsed).toBeNull();
+
+    const formattedClean = formatMoney(null, "PHP");
+    expect(formattedClean).toBe("Unknown");
+  });
+});

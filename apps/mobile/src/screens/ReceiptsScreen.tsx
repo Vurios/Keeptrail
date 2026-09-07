@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -72,6 +72,12 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     setAmountError(null);
   };
 
+  useEffect(() => {
+    if (selectedReceipt) {
+      openEditor(selectedReceipt);
+    }
+  }, [selectedReceipt]);
+
   const closeEditor = () => {
     haptics.tap();
     setEditingReceipt(null);
@@ -114,6 +120,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
 
     saveReceipt({
       ...editingReceipt,
+      title: formMerchant.trim() || editingReceipt.title || "Receipt",
       merchant: formMerchant.trim() || null,
       transaction_date: formDate.trim() || null,
       currency: formCurrency,
@@ -986,6 +993,7 @@ const styles = StyleSheet.create({
   },
   modalSafeArea: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
   },
   modalHeader: {
     flexDirection: "row",

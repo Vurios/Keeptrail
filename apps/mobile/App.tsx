@@ -87,29 +87,6 @@ function MainApp() {
         )}
       </View>
 
-      {/* Floating Action Button for Quick Capture */}
-      {activeOverlay === "none" && (
-        <TouchableOpacity
-          style={[
-            styles.floatingCaptureBtn,
-            {
-              backgroundColor: colors.primary,
-              shadowColor: isDark ? "#000" : "#146B55",
-            },
-          ]}
-          onPress={() => {
-            haptics.tap();
-            setIsCaptureModalOpen(true);
-          }}
-          activeOpacity={0.82}
-          accessibilityRole="button"
-          accessibilityLabel="Capture or Add Receipt"
-          accessibilityHint="Opens options to photograph a receipt, import a screenshot, or enter details manually"
-        >
-          <Text style={[styles.floatingCaptureIcon, { color: colors.primaryFg }]}>+</Text>
-        </TouchableOpacity>
-      )}
-
       {/* Bottom Navigation Bar */}
       {activeOverlay === "none" && (
         <SafeAreaView
@@ -239,6 +216,29 @@ function MainApp() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+      )}
+
+      {/* Floating Action Button for Quick Capture (layered on top) */}
+      {activeOverlay === "none" && (
+        <TouchableOpacity
+          style={[
+            styles.floatingCaptureBtn,
+            {
+              backgroundColor: colors.primary,
+              shadowColor: isDark ? "#000" : "#146B55",
+            },
+          ]}
+          onPress={() => {
+            haptics.tap();
+            setIsCaptureModalOpen(true);
+          }}
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel="Capture or Add Receipt"
+          accessibilityHint="Opens options to photograph a receipt, import a screenshot, or enter details manually"
+        >
+          <Text style={[styles.floatingCaptureIcon, { color: colors.primaryFg }]}>+</Text>
+        </TouchableOpacity>
       )}
 
       {/* Capture Modal */}

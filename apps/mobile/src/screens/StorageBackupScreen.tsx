@@ -96,16 +96,32 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({ onBack
     }, 50);
   };
 
+  const handleLoadDemoArchive = () => {
+    try {
+      haptics.tap();
+      const demoBytes = exportEncryptedBackup("keeptrail2026");
+      setLastExportedBytes(demoBytes);
+      setRestorePassword("keeptrail2026");
+      setRestoreError(null);
+      showToast({
+        type: "success",
+        title: "Demo Archive Loaded",
+        message: `Loaded ${(demoBytes.length / 1024).toFixed(
+          1,
+        )} KB encrypted backup container with demo password "keeptrail2026".`,
+        duration: 3500,
+      });
+    } catch {
+      // Ignore
+    }
+  };
+
   const handleRunRestore = () => {
     if (isRestoreProcessing) return;
 
     if (!lastExportedBytes) {
       haptics.error();
-      showToast({
-        type: "warning",
-        title: "No Archive Selected",
-        message: "Generate a backup archive first or select an existing .keeptrail file.",
-      });
+      setRestoreError("Please load a backup archive before restoring.");
       return;
     }
 
@@ -577,6 +593,52 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({ onBack
                 contentContainerStyle={{ padding: 16 }}
                 keyboardShouldPersistTaps="handled"
               >
+                {lastExportedBytes ? (
+                  <View
+                    style={[
+                      styles.archiveStatusCard,
+                      {
+                        backgroundColor: colors.status.success.bg,
+                        borderColor: colors.status.success.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.archiveStatusText, { color: colors.status.success.text }]}>
+                      📦 Active Archive: {(lastExportedBytes.length / 1024).toFixed(1)} KB ready to
+                      decrypt
+                    </Text>
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.archiveStatusCard,
+                      {
+                        backgroundColor: colors.status.warning.bg,
+                        borderColor: colors.status.warning.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.archiveStatusText, { color: colors.status.warning.text }]}>
+                      ⚠️ No backup archive loaded in memory yet.
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.loadDemoBtn,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                      onPress={handleLoadDemoArchive}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.loadDemoBtnText, { color: colors.primary }]}>
+                        Load Demo Vault Archive
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
                   Archive Decryption Password *
                 </Text>
@@ -798,6 +860,7 @@ const styles = StyleSheet.create({
   },
   modalSafe: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
   },
   modalHeader: {
     flexDirection: "row",
@@ -872,5 +935,29 @@ const styles = StyleSheet.create({
   backupTipDesc: {
     fontSize: 12,
     lineHeight: 17,
+  },
+  archiveStatusCard: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 8,
+  },
+  archiveStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  loadDemoBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  loadDemoBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

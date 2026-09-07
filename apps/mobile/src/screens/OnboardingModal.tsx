@@ -99,7 +99,7 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
 
     const newRecord = saveReceipt({
       id: `rec_onboard_${Date.now()}`,
-      title: merchant.trim() || "Receipt saved Sep 6",
+      title: merchant.trim() || `Receipt saved ${new Date().toISOString().split("T")[0]}`,
       merchant: merchant.trim() || null,
       transaction_date: new Date().toISOString().split("T")[0],
       total_minor_units: rawMinor !== null && !isNaN(rawMinor) ? rawMinor : null,
@@ -688,6 +688,7 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
   },
   stepHeader: {
     flexDirection: "row",

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -49,8 +49,21 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({ visible, onClose }) 
   const [attachedBytes, setAttachedBytes] = useState<Uint8Array | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (processingTimerRef.current) {
+        clearTimeout(processingTimerRef.current);
+      }
+    };
+  }, []);
 
   const resetForm = () => {
+    if (processingTimerRef.current) {
+      clearTimeout(processingTimerRef.current);
+      processingTimerRef.current = null;
+    }
     setStep("pick_method");
     setMerchant("");
     setDate("");
@@ -91,7 +104,7 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({ visible, onClose }) 
 
     setStep("processing");
 
-    setTimeout(() => {
+    processingTimerRef.current = setTimeout(() => {
       let mockOcrText = "";
 
       if (scenario === "sample_food") {
@@ -134,11 +147,12 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({ visible, onClose }) 
     setIsSaving(true);
     const recId = `rec_${Date.now()}`;
     const parsedMinorUnits = amount.trim() ? parseMoneyToMinorUnits(amount, currency) : null;
+    const safeDate = date.trim() || new Date().toISOString().split("T")[0];
 
     // 1. Save canonical receipt record in local vault
     saveReceipt({
       id: recId,
-      title: merchant.trim() || `Receipt saved ${date}`,
+      title: merchant.trim() || `Receipt saved ${safeDate}`,
       merchant: merchant.trim() || null,
       transaction_date: date.trim() || null,
       currency: currency.trim() || "PHP",
@@ -520,6 +534,7 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({ visible, onClose }) 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
   },
   header: {
     flexDirection: "row",
@@ -546,7 +561,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 16,
     borderRadius: 8,
-    minHeight: 36,
+    minHeight: 40,
     justifyContent: "center",
     alignItems: "center",
   },
