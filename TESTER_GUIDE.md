@@ -2,12 +2,14 @@
 
 **App:** Keeptrail
 **Package ID:** `com.keeptrail.app`
-**Version:** `1.0.2` (versionCode `3`)
+**Version:** `1.0.3` (versionCode `4`)
 **Build Profile:** `pilot` (standalone internal distribution)
-**APK Filename:** `keeptrail-pilot-v1.0.2.apk`
-**SHA-256 Checksum:** `ebe08ec6d5218e719ae02ac2af5c0f1b8223092a3158eca6cd029e780ab09a1a`
-**Direct Download Link:** https://expo.dev/artifacts/eas/oOBD8rsBE3SCzjpsz0LMn5SVtmc5Jfrokz1gAEv1S28.apk
-**Public Build Page:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/c441361d-97c6-4878-9231-76bbe14c05b0
+**APK Filename:** `keeptrail-pilot-v1.0.3.apk`
+**SHA-256 Checksum:** `e41d6f2f878bbbbe5983f69f8047bfbcda5dd0d2cdc6c6751991aa1b1226f0a3`
+**GitHub Release:** https://github.com/Vurios/Keeptrail/releases/tag/v1.0.3-pilot
+**Direct GitHub APK Download:** https://github.com/Vurios/Keeptrail/releases/download/v1.0.3-pilot/keeptrail-pilot-v1.0.3.apk
+**Direct EAS Download Link:** https://expo.dev/artifacts/eas/l3D8iSjxGk9F-Afvua2FLv5P3V0UGhhi4f0tUn7TDfo.apk
+**Public Build Page:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/2ec44b7c-60fd-44cc-9c43-51f6533e37e3
 
 ---
 
