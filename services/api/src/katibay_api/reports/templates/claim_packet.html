@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Warranty Claim Evidence Packet - {{ passport.item_name }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 18mm 16mm 18mm 16mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+        font-size: 8pt;
+        color: #4b5563;
+      }
+      @bottom-left {
+        content: "KATIBAY IMMUTABLE PROOF OF OWNERSHIP & WARRANTY VOUCHER";
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 7.5pt;
+        font-weight: bold;
+        color: #6b7280;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.45;
+      color: #111827;
+      background: #ffffff;
+    }
+
+    .header-table {
+      width: 100%;
+      border-bottom: 2pt solid #0f372c;
+      padding-bottom: 12pt;
+      margin-bottom: 16pt;
+    }
+
+    .brand-title {
+      font-size: 16pt;
+      font-weight: 900;
+      letter-spacing: 0.5pt;
+      color: #0f372c;
+      text-transform: uppercase;
+    }
+
+    .brand-subtitle {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #c9973b;
+      text-transform: uppercase;
+      letter-spacing: 1pt;
+    }
+
+    .report-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #111827;
+      text-align: right;
+    }
+
+    .report-meta {
+      font-size: 8pt;
+      color: #4b5563;
+      text-align: right;
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    .section-title {
+      font-size: 10pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      color: #0f372c;
+      border-bottom: 1pt solid #e5e7eb;
+      padding-bottom: 3pt;
+      margin-top: 14pt;
+      margin-bottom: 8pt;
+    }
+
+    .data-grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10pt;
+    }
+
+    .data-grid td {
+      padding: 5pt 6pt;
+      border: 0.5pt solid #e5e7eb;
+      font-size: 9pt;
+      vertical-align: top;
+    }
+
+    .data-grid .label {
+      font-weight: 700;
+      color: #374151;
+      width: 25%;
+      background: #f9fafb;
+    }
+
+    .data-grid .value {
+      color: #111827;
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    .narrative-box {
+      border: 1pt solid #d1d5db;
+      background: #f9fafb;
+      padding: 10pt;
+      border-radius: 4pt;
+      font-size: 9.5pt;
+      line-height: 1.5;
+      color: #111827;
+      margin-bottom: 12pt;
+    }
+
+    .timeline-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14pt;
+    }
+
+    .timeline-table th {
+      background: #f3f4f6;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 5pt 6pt;
+      border-bottom: 1pt solid #d1d5db;
+    }
+
+    .timeline-table td {
+      padding: 5pt 6pt;
+      border-bottom: 0.5pt solid #e5e7eb;
+      font-size: 8.5pt;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2pt 5pt;
+      border-radius: 3pt;
+      font-size: 7.5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      border: 0.5pt solid #10b981;
+      background: #ecfdf5;
+      color: #065f46;
+    }
+
+    .badge-claim {
+      border-color: #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+    }
+
+    .signature-grid {
+      width: 100%;
+      margin-top: 24pt;
+      page-break-inside: avoid;
+    }
+
+    .sig-line {
+      border-top: 1pt solid #111827;
+      margin-top: 36pt;
+      padding-top: 4pt;
+      text-align: center;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .sig-title {
+      font-size: 7.5pt;
+      color: #6b7280;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <table class="header-table">
+    <tr>
+      <td>
+        <div class="brand-title">Katibay</div>
+        <div class="brand-subtitle">Proof of Purchase & Warranty Passport</div>
+      </td>
+      <td>
+        <div class="report-title">WARRANTY CLAIM PACKET</div>
+        <div class="report-meta">Claim Ref: {{ claim.id }}</div>
+        <div class="report-meta">Filing Date: {{ claim.opened_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Section 1: Item Ownership & Purchase Details -->
+  <div class="section-title">1. Registered Asset Ownership Details</div>
+  <table class="data-grid">
+    <tr>
+      <td class="label">Item / Equipment Name:</td>
+      <td class="value"><strong>{{ passport.item_name }}</strong></td>
+      <td class="label">Brand / Manufacturer:</td>
+      <td class="value">{{ passport.brand or 'N/A' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Model Number:</td>
+      <td class="value">{{ passport.model or 'N/A' }}</td>
+      <td class="label">Serial Number (S/N):</td>
+      <td class="value"><strong>{{ passport.serial_number or 'N/A' }}</strong></td>
+    </tr>
+    <tr>
+      <td class="label">Official Purchase Date:</td>
+      <td class="value">{{ passport.purchase_date }}</td>
+      <td class="label">Merchant / Vendor:</td>
+      <td class="value">{{ passport.merchant_name or 'Authorized Retailer' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Official Receipt / Invoice #:</td>
+      <td class="value">{{ passport.or_number or 'N/A' }}</td>
+      <td class="label">Purchase Amount:</td>
+      <td class="value"><strong>₱{{ "{:,.2f}".format((passport.total_amount or 0) / 100) }}</strong></td>
+    </tr>
+  </table>
+
+  <!-- Section 2: Warranty & Coverage Period -->
+  <div class="section-title">2. Warranty Coverage & Protection Status</div>
+  <table class="data-grid">
+    <tr>
+      <td class="label">Warranty Duration:</td>
+      <td class="value">{{ passport.warranty_months }} Months</td>
+      <td class="label">Warranty Expiration Date:</td>
+      <td class="value"><strong>{{ passport.warranty_expires_at }}</strong></td>
+    </tr>
+    <tr>
+      <td class="label">Coverage Terms / Scope:</td>
+      <td class="value" colspan="3">{{ passport.coverage_notes or 'Standard manufacturer warranty covering parts and labor defects.' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Active Coverage Status:</td>
+      <td class="value" colspan="3">
+        <span class="badge badge-claim">OFFICIAL CLAIM FILED WITHIN ACTIVE WARRANTY</span>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Section 3: Defect & Fault Narrative -->
+  <div class="section-title">3. Defect Statement & Incident Description</div>
+  <div class="narrative-box">
+    <strong>Reported Defect / Issue:</strong><br>
+    {{ claim.fault_description }}
+  </div>
+
+  <!-- Section 4: Chronological Claim Timeline -->
+  <div class="section-title">4. Authenticated Audit Timeline</div>
+  <table class="timeline-table">
+    <thead>
+      <tr>
+        <th>Milestone / Event</th>
+        <th>Date</th>
+        <th>Verification Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Asset Purchase & Invoice Issuance</strong></td>
+        <td>{{ passport.purchase_date }}</td>
+        <td><span class="badge">VERIFIED BY RECEIPT</span></td>
+      </tr>
+      <tr>
+        <td><strong>Katibay Digital Passport Registration</strong></td>
+        <td>{{ passport.created_at.strftime('%Y-%m-%d') if passport.created_at else passport.purchase_date }}</td>
+        <td><span class="badge">SEALED IN LEDGER</span></td>
+      </tr>
+      <tr>
+        <td><strong>Official Warranty Claim Incident Recorded</strong></td>
+        <td>{{ claim.opened_at.strftime('%Y-%m-%d') }}</td>
+        <td><span class="badge badge-claim">PENDING RETAILER ACTION</span></td>
+      </tr>
+      <tr>
+        <td><strong>Warranty Coverage Expiry Ceiling</strong></td>
+        <td>{{ passport.warranty_expires_at }}</td>
+        <td><span class="badge">TERMS ACTIVE</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Section 5: Signature & Verification Block -->
+  <table class="signature-grid">
+    <tr>
+      <td style="width: 45%;">
+        <div class="sig-line">Registered Claimant / Owner</div>
+        <div class="sig-title">Authorized Student Representative / Purchaser</div>
+      </td>
+      <td style="width: 10%;"></td>
+      <td style="width: 45%;">
+        <div class="sig-line">Authorized Service / Vendor Representative</div>
+        <div class="sig-title">Warranty Intake Officer & Technician</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,0 +1,214 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Katibay Visual Design Tokens
+  Inherited directly from Brand Architecture (Concept 1: The Perforated Seal of Katibayan).
+  No raw color utilities (e.g. bg-red-500, text-blue-600) permitted in components.
+*/
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.005 85);
+  --foreground: oklch(0.145 0.01 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0.01 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0.01 265);
+  --primary: oklch(0.205 0.03 265);
+  --primary-foreground: oklch(0.985 0.005 265);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.205 0.03 265);
+  --muted: oklch(0.96 0.005 260);
+  --muted-foreground: oklch(0.5 0.02 260);
+  --accent: oklch(0.57 0.19 38.5);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0.01 260);
+  --input: oklch(0.9 0.01 260);
+  --ring: oklch(0.57 0.19 38.5 / 50%);
+
+  /* Katibay Brand Core */
+  --brand-primary: oklch(0.205 0.03 265);
+  --brand-primary-hover: oklch(0.275 0.03 265);
+  --brand-primary-fg: oklch(0.985 0.005 265);
+  --brand-accent: oklch(0.57 0.19 38.5);
+  --brand-accent-hover: oklch(0.48 0.18 38.5);
+  --brand-accent-fg: oklch(1 0 0);
+  --brand-surface: oklch(0.985 0.005 85);
+
+  /* Semantic Scale: Success */
+  --status-success-bg: oklch(0.96 0.04 145);
+  --status-success-border: oklch(0.85 0.08 145);
+  --status-success-text: oklch(0.35 0.12 145);
+  --status-success-fill: oklch(0.55 0.16 145);
+  --status-success-fg: oklch(1 0 0);
+
+  /* Semantic Scale: Warning */
+  --status-warning-bg: oklch(0.97 0.06 85);
+  --status-warning-border: oklch(0.88 0.12 85);
+  --status-warning-text: oklch(0.42 0.14 85);
+  --status-warning-fill: oklch(0.72 0.16 85);
+  --status-warning-fg: oklch(0.2 0.04 85);
+
+  /* Semantic Scale: Danger */
+  --status-danger-bg: oklch(0.96 0.04 25);
+  --status-danger-border: oklch(0.86 0.1 25);
+  --status-danger-text: oklch(0.4 0.18 25);
+  --status-danger-fill: oklch(0.55 0.22 25);
+  --status-danger-fg: oklch(1 0 0);
+
+  /* Semantic Scale: Neutral */
+  --status-neutral-bg: oklch(0.96 0.005 260);
+  --status-neutral-border: oklch(0.88 0.01 260);
+  --status-neutral-text: oklch(0.38 0.02 260);
+  --status-neutral-fill: oklch(0.5 0.02 260);
+  --status-neutral-fg: oklch(1 0 0);
+
+  /* Semantic Scale: Info */
+  --status-info-bg: oklch(0.96 0.03 240);
+  --status-info-border: oklch(0.86 0.08 240);
+  --status-info-text: oklch(0.38 0.12 240);
+  --status-info-fill: oklch(0.55 0.15 240);
+  --status-info-fg: oklch(1 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0.01 265);
+  --foreground: oklch(0.985 0.005 265);
+  --card: oklch(0.205 0.03 265);
+  --card-foreground: oklch(0.985 0.005 265);
+  --popover: oklch(0.205 0.03 265);
+  --popover-foreground: oklch(0.985 0.005 265);
+  --primary: oklch(0.922 0.005 265);
+  --primary-foreground: oklch(0.205 0.03 265);
+  --secondary: oklch(0.269 0.02 265);
+  --secondary-foreground: oklch(0.985 0.005 265);
+  --muted: oklch(0.269 0.02 265);
+  --muted-foreground: oklch(0.708 0.02 260);
+  --accent: oklch(0.57 0.19 38.5);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.57 0.19 38.5 / 60%);
+
+  --brand-primary: oklch(0.922 0.005 265);
+  --brand-primary-hover: oklch(1 0 0);
+  --brand-primary-fg: oklch(0.145 0.01 265);
+  --brand-accent: oklch(0.6 0.2 38.5);
+  --brand-accent-hover: oklch(0.65 0.2 38.5);
+  --brand-accent-fg: oklch(1 0 0);
+  --brand-surface: oklch(0.18 0.02 265);
+
+  --status-success-bg: oklch(0.25 0.06 145);
+  --status-success-border: oklch(0.4 0.1 145);
+  --status-success-text: oklch(0.9 0.08 145);
+  --status-success-fill: oklch(0.6 0.16 145);
+  --status-success-fg: oklch(1 0 0);
+
+  --status-warning-bg: oklch(0.28 0.08 85);
+  --status-warning-border: oklch(0.45 0.12 85);
+  --status-warning-text: oklch(0.92 0.1 85);
+  --status-warning-fill: oklch(0.75 0.16 85);
+  --status-warning-fg: oklch(0.15 0.03 85);
+
+  --status-danger-bg: oklch(0.25 0.08 25);
+  --status-danger-border: oklch(0.42 0.12 25);
+  --status-danger-text: oklch(0.92 0.08 25);
+  --status-danger-fill: oklch(0.6 0.22 25);
+  --status-danger-fg: oklch(1 0 0);
+
+  --status-neutral-bg: oklch(0.25 0.01 260);
+  --status-neutral-border: oklch(0.38 0.02 260);
+  --status-neutral-text: oklch(0.85 0.02 260);
+  --status-neutral-fill: oklch(0.55 0.02 260);
+  --status-neutral-fg: oklch(1 0 0);
+
+  --status-info-bg: oklch(0.25 0.06 240);
+  --status-info-border: oklch(0.4 0.1 240);
+  --status-info-text: oklch(0.9 0.08 240);
+  --status-info-fill: oklch(0.58 0.15 240);
+  --status-info-fg: oklch(1 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Brand Colors */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-hover: var(--brand-primary-hover);
+  --color-brand-primary-fg: var(--brand-primary-fg);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-hover: var(--brand-accent-hover);
+  --color-brand-accent-fg: var(--brand-accent-fg);
+  --color-brand-surface: var(--brand-surface);
+
+  /* Semantic Status Colors */
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-success-text: var(--status-success-text);
+  --color-status-success-fill: var(--status-success-fill);
+  --color-status-success-fg: var(--status-success-fg);
+
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-warning-text: var(--status-warning-text);
+  --color-status-warning-fill: var(--status-warning-fill);
+  --color-status-warning-fg: var(--status-warning-fg);
+
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-danger-border: var(--status-danger-border);
+  --color-status-danger-text: var(--status-danger-text);
+  --color-status-danger-fill: var(--status-danger-fill);
+  --color-status-danger-fg: var(--status-danger-fg);
+
+  --color-status-neutral-bg: var(--status-neutral-bg);
+  --color-status-neutral-border: var(--status-neutral-border);
+  --color-status-neutral-text: var(--status-neutral-text);
+  --color-status-neutral-fill: var(--status-neutral-fill);
+  --color-status-neutral-fg: var(--status-neutral-fg);
+
+  --color-status-info-bg: var(--status-info-bg);
+  --color-status-info-border: var(--status-info-border);
+  --color-status-info-text: var(--status-info-text);
+  --color-status-info-fill: var(--status-info-fill);
+  --color-status-info-fg: var(--status-info-fg);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}

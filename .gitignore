@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds & caches
+.next/
+out/
+dist/
+build/
+.turbo/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Expo
+.expo/
+ios/
+android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+web-build/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Supabase local dev
+supabase/.branches/
+supabase/.temp/
+
+# Testing
+coverage/
+
+# Editors & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Agent tool metadata
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.impeccable/
+.kiro/
+.opencode/

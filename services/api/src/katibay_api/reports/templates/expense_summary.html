@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Expense Summary - {{ activity.title }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm 15mm 20mm 15mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 8pt;
+        color: #555555;
+      }
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.4;
+      color: #111111;
+      background: #ffffff;
+    }
+    .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    }
+    .header {
+      border-bottom: 2px solid #111111;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .org-name {
+      font-size: 11pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #333333;
+    }
+    .report-title {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #000000;
+      margin-top: 2px;
+      margin-bottom: 4px;
+    }
+    .meta-grid {
+      display: table;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .meta-row {
+      display: table-row;
+    }
+    .meta-cell {
+      display: table-cell;
+      padding: 2px 0;
+    }
+    .meta-label {
+      font-weight: 600;
+      color: #444444;
+      width: 120px;
+    }
+    .meta-val {
+      font-weight: 500;
+    }
+    .category-block {
+      margin-bottom: 20px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .category-header {
+      background: #eaeaea;
+      border-left: 4px solid #111111;
+      padding: 6px 10px;
+      font-weight: 700;
+      font-size: 10pt;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+    }
+    th {
+      background: #f8f8f8;
+      border-top: 1px solid #222222;
+      border-bottom: 1px solid #222222;
+      padding: 5px 8px;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      text-align: left;
+    }
+    th.num, td.num {
+      text-align: right;
+    }
+    td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #e5e5e5;
+      font-size: 9pt;
+      vertical-align: middle;
+    }
+    tr:nth-child(even) td {
+      background: #fafafa;
+    }
+    .subtotal-row td {
+      background: #f0f0f0;
+      font-weight: 700;
+      border-top: 1px solid #222222;
+      border-bottom: 1.5px solid #222222;
+    }
+    .grand-total-table {
+      margin-top: 16px;
+      width: 100%;
+    }
+    .grand-total-table td {
+      background: #111111;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 11pt;
+      padding: 8px 12px;
+    }
+    .signature-container {
+      margin-top: 36px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .signature-grid {
+      display: table;
+      width: 100%;
+      border-spacing: 24px 0;
+      margin-left: -24px;
+      margin-right: -24px;
+    }
+    .signature-col {
+      display: table-cell;
+      width: 33.333%;
+      text-align: center;
+    }
+    .signature-line {
+      border-bottom: 1.5px solid #111111;
+      height: 48px;
+      margin-bottom: 6px;
+    }
+    .signature-name {
+      font-weight: 700;
+      font-size: 9pt;
+    }
+    .signature-role {
+      font-size: 8pt;
+      color: #555555;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="org-name">{{ org_name or 'Student Organization' }}</div>
+    <div class="report-title">Itemized Expense Summary</div>
+    <div class="meta-grid">
+      <div class="meta-row">
+        <div class="meta-cell meta-label">Activity Title:</div>
+        <div class="meta-cell meta-val"><strong>{{ activity.title }}</strong></div>
+        <div class="meta-cell meta-label">Generated Date:</div>
+        <div class="meta-cell meta-val mono">{{ generated_date }}</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-cell meta-label">Activity Period:</div>
+        <div class="meta-cell meta-val mono">{{ activity.start_date }} to {{ activity.end_date }}</div>
+        <div class="meta-cell meta-label">Cash Advance:</div>
+        <div class="meta-cell meta-val mono"><strong>₱{{ cash_advance_formatted }}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grouped Categories -->
+  {% for group in category_groups %}
+  <div class="category-block">
+    <div class="category-header">
+      <span>{{ group.category }}</span>
+      <span class="mono" style="float: right;">Subtotal: ₱{{ group.subtotal_formatted }}</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 15%;">Date</th>
+          <th style="width: 20%;">OR / Invoice #</th>
+          <th style="width: 35%;">Merchant Name</th>
+          <th style="width: 15%;">TIN</th>
+          <th style="width: 15%;" class="num">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in group.entries %}
+        <tr>
+          <td class="mono">{{ item.txn_date or '—' }}</td>
+          <td class="mono">{{ item.or_number or '—' }}</td>
+          <td>{{ item.merchant_name or 'Official Receipt' }}</td>
+          <td class="mono">{{ item.merchant_tin or '—' }}</td>
+          <td class="num mono">₱{{ item.amount_formatted }}</td>
+        </tr>
+        {% endfor %}
+
+        <tr class="subtotal-row">
+          <td colspan="4">SUBTOTAL ({{ group.category }})</td>
+          <td class="num mono">₱{{ group.subtotal_formatted }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+
+  <!-- Grand Total Banner -->
+  <table class="grand-total-table">
+    <tr>
+      <td style="text-align: left;">GRAND TOTAL (APPROVED DISBURSEMENTS)</td>
+      <td style="text-align: right;" class="mono">₱{{ total_spend_formatted }}</td>
+    </tr>
+  </table>
+
+  <!-- Signatures Block -->
+  <div class="signature-container">
+    <div class="signature-grid">
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.treasurer_name or 'Organization Treasurer' }}</div>
+        <div class="signature-role">Prepared by (Treasurer)</div>
+      </div>
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.president_name or 'Organization President' }}</div>
+        <div class="signature-role">Approved by (President)</div>
+      </div>
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.adviser_name or 'Faculty / Org Adviser' }}</div>
+        <div class="signature-role">Noted by (Adviser)</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

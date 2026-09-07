@@ -1,0 +1,1 @@
+"""Receipts feature module."""

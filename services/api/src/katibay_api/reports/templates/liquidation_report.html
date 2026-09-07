@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Liquidation Report - {{ activity.title }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm 15mm 20mm 15mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 8pt;
+        color: #555555;
+      }
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.4;
+      color: #111111;
+      background: #ffffff;
+    }
+    .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    }
+    .header {
+      border-bottom: 2px solid #111111;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .org-name {
+      font-size: 11pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #333333;
+    }
+    .report-title {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #000000;
+      margin-top: 2px;
+      margin-bottom: 4px;
+    }
+    .meta-grid {
+      display: table;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .meta-row {
+      display: table-row;
+    }
+    .meta-cell {
+      display: table-cell;
+      padding: 2px 0;
+    }
+    .meta-label {
+      font-weight: 600;
+      color: #444444;
+      width: 120px;
+    }
+    .meta-val {
+      font-weight: 500;
+    }
+    .summary-cards {
+      display: table;
+      width: 100%;
+      margin-bottom: 20px;
+      border-spacing: 8px 0;
+      margin-left: -8px;
+      margin-right: -8px;
+    }
+    .card {
+      display: table-cell;
+      width: 33.333%;
+      border: 1.5px solid #222222;
+      border-radius: 4px;
+      padding: 10px 12px;
+      background: #fdfdfd;
+    }
+    .card-label {
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555555;
+      margin-bottom: 4px;
+    }
+    .card-value {
+      font-size: 14pt;
+      font-weight: 800;
+      color: #000000;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: 1px solid #111111;
+      background: #f0f0f0;
+    }
+    .badge-approved { background: #e8f5e9; color: #1b5e20; border-color: #2e7d32; }
+    .badge-over { background: #ffebee; color: #b71c1c; border-color: #c62828; }
+    .badge-ontrack { background: #e3f2fd; color: #0d47a1; border-color: #1565c0; }
+
+    .section-title {
+      font-size: 11pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #333333;
+      padding-bottom: 4px;
+      margin-top: 18px;
+      margin-bottom: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    th {
+      background: #f0f0f0;
+      border-top: 1.5px solid #222222;
+      border-bottom: 1.5px solid #222222;
+      padding: 6px 8px;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      text-align: left;
+    }
+    th.num, td.num {
+      text-align: right;
+    }
+    td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 9pt;
+      vertical-align: middle;
+    }
+    tr:nth-child(even) td {
+      background: #fafafa;
+    }
+    tr.total-row td {
+      background: #f0f0f0;
+      border-top: 1.5px solid #222222;
+      border-bottom: 2px solid #222222;
+      font-weight: 800;
+      font-size: 9.5pt;
+    }
+    .signature-container {
+      margin-top: 32px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .signature-grid {
+      display: table;
+      width: 100%;
+      border-spacing: 24px 0;
+      margin-left: -24px;
+      margin-right: -24px;
+    }
+    .signature-col {
+      display: table-cell;
+      width: 33.333%;
+      text-align: center;
+    }
+    .signature-line {
+      border-bottom: 1.5px solid #111111;
+      height: 48px;
+      margin-bottom: 6px;
+    }
+    .signature-name {
+      font-weight: 700;
+      font-size: 9pt;
+    }
+    .signature-role {
+      font-size: 8pt;
+      color: #555555;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="org-name">{{ org_name or 'Student Organization' }}</div>
+    <div class="report-title">Official Liquidation Report</div>
+    <div class="meta-grid">
+      <div class="meta-row">
+        <div class="meta-cell meta-label">Activity Title:</div>
+        <div class="meta-cell meta-val"><strong>{{ activity.title }}</strong></div>
+        <div class="meta-cell meta-label">Generated Date:</div>
+        <div class="meta-cell meta-val mono">{{ generated_date }}</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-cell meta-label">Activity Period:</div>
+        <div class="meta-cell meta-val mono">{{ activity.start_date }} to {{ activity.end_date }}</div>
+        <div class="meta-cell meta-label">Status:</div>
+        <div class="meta-cell meta-val"><span class="badge badge-approved">{{ activity.status | upper }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="summary-cards">
+    <div class="card">
+      <div class="card-label">Cash Advance Issued</div>
+      <div class="card-value mono">₱{{ cash_advance_formatted }}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Actual Spend</div>
+      <div class="card-value mono">₱{{ total_spend_formatted }}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">{% if net_balance >= 0 %}Excess to Return{% else %}Overage Reimbursement{% endif %}</div>
+      <div class="card-value mono">₱{{ net_balance_formatted }}</div>
+    </div>
+  </div>
+
+  <!-- Category Breakdown -->
+  <div class="section-title">1. Category Allocation & Spending</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th class="num">Approved Budget</th>
+        <th class="num">Actual Spend</th>
+        <th class="num">Variance</th>
+        <th style="text-align: center;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cat in category_summary %}
+      <tr>
+        <td><strong>{{ cat.category }}</strong></td>
+        <td class="num mono">₱{{ cat.approved_formatted }}</td>
+        <td class="num mono">₱{{ cat.actual_formatted }}</td>
+        <td class="num mono">{% if cat.variance >= 0 %}+₱{{ cat.variance_formatted }}{% else %}-₱{{ cat.variance_formatted }}{% endif %}</td>
+        <td style="text-align: center;">
+          {% if cat.is_over_budget %}
+            <span class="badge badge-over">OVER BUDGET</span>
+          {% else %}
+            <span class="badge badge-ontrack">ON TRACK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      <tr class="total-row">
+        <td>TOTAL</td>
+        <td class="num mono">₱{{ total_approved_formatted }}</td>
+        <td class="num mono">₱{{ total_spend_formatted }}</td>
+        <td class="num mono">₱{{ total_variance_formatted }}</td>
+        <td style="text-align: center;">
+          {% if is_over_budget %}
+            <span class="badge badge-over">OVERAGE</span>
+          {% else %}
+            <span class="badge badge-approved">BALANCED</span>
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Approved Entries Overview -->
+  <div class="section-title">2. Approved Disbursements (Ledger Entries)</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>OR / Invoice #</th>
+        <th>Merchant Name</th>
+        <th>Category</th>
+        <th class="num">Amount (₱)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in ledger_entries %}
+      <tr>
+        <td class="mono">{{ entry.txn_date or '—' }}</td>
+        <td class="mono">{{ entry.or_number or '—' }}</td>
+        <td>{{ entry.merchant_name or 'Official Receipt' }}</td>
+        <td>{{ entry.category }}</td>
+        <td class="num mono">₱{{ entry.amount_formatted }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="total-row">
+        <td colspan="4">TOTAL LIQUIDATED EXPENDITURES</td>
+        <td class="num mono">₱{{ total_spend_formatted }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Signatures Block -->
+  <div class="signature-container">
+    <div class="signature-grid">
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.treasurer_name or 'Organization Treasurer' }}</div>
+        <div class="signature-role">Prepared by (Treasurer)</div>
+      </div>
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.president_name or 'Organization President' }}</div>
+        <div class="signature-role">Approved by (President)</div>
+      </div>
+      <div class="signature-col">
+        <div class="signature-line"></div>
+        <div class="signature-name">{{ signatures.adviser_name or 'Faculty / Org Adviser' }}</div>
+        <div class="signature-role">Noted by (Adviser)</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

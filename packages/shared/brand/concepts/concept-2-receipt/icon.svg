@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="100%" height="100%" fill="none">
+  <!-- Concept 2: The Verified Receipt Record (Icon) -->
+  <!-- Crisp 32x32 pixel-grid aligned geometry, optimized for 16x16 favicon -->
+  <!-- Receipt silhouette with authentic top serration teeth -->
+  <path d="M5 5L7.5 2L10 5L12.5 2L15 5L17.5 2L20 5L22.5 2L25 5L27.5 2V30H5V5Z" fill="#064E3B" />
+
+  <!-- The Document Spine / Ledger Pillar -->
+  <path d="M9 8H13V24H9V8Z" fill="#FFFFFF" />
+
+  <!-- The Verification K-Notch: Upper diagonal strike & lower ledger grounding -->
+  <path d="M14.5 15.5L20.5 9H25L18 16.5L25 24H20.5L14.5 17.5V15.5Z" fill="#F59E0B" />
+
+  <!-- Subtle audit barcode tick at the bottom right -->
+  <rect x="18" y="26" width="7" height="2" fill="#FFFFFF" rx="0.5" />
+</svg>

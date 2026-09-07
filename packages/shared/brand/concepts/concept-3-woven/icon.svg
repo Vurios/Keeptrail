@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="100%" height="100%" fill="none">
+  <!-- Concept 3: The Woven Monogram of Tibay (Icon) -->
+  <!-- Interlocking geometric weave ribbons forming an indestructible 'K' -->
+  <!-- Vertical Weave Pillar (Left) -->
+  <path d="M4 3H10V29H4V3Z" fill="#18181B" />
+
+  <!-- Upper Diagonal Weft (Over & Under Interlock) -->
+  <path d="M12 14.5L22 3H28.5L16.5 16.5L12 14.5Z" fill="#B45309" />
+
+  <!-- Lower Diagonal Warp (Interlocking Anchor) -->
+  <path d="M11 17.5L17.5 15.5L28.5 29H22L11 17.5Z" fill="#D97706" />
+
+  <!-- Center Locking Knot/Grip -->
+  <path d="M10 12H15V20H10V12Z" fill="#18181B" />
+</svg>

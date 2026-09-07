@@ -1,0 +1,46 @@
+{
+  "merchant_name": "Jollibee Foods Corporation",
+  "merchant_name_confidence": 0.98,
+  "merchant_tin": "000-123-456-000",
+  "merchant_tin_confidence": 0.95,
+  "merchant_address": "Katipunan Ave, Quezon City, Metro Manila",
+  "merchant_address_confidence": 0.92,
+  "txn_date": "2026-08-15",
+  "txn_date_confidence": 0.99,
+  "txn_time": "12:34",
+  "txn_time_confidence": 0.97,
+  "or_number": "OR-2026-987654",
+  "or_number_confidence": 0.96,
+  "line_items": [
+    {
+      "description": "2pc Chickenjoy w/ Rice & Drink",
+      "qty": 2.0,
+      "unit_price": 18500,
+      "line_total": 37000,
+      "confidence": 0.98
+    },
+    {
+      "description": "Jolly Spaghetti Solo",
+      "qty": 1.0,
+      "unit_price": 6500,
+      "line_total": 6500,
+      "confidence": 0.97
+    },
+    {
+      "description": "Peach Mango Pie 3-Pack",
+      "qty": 1.0,
+      "unit_price": 14500,
+      "line_total": 14500,
+      "confidence": 0.99
+    }
+  ],
+  "subtotal": 51786,
+  "subtotal_confidence": 0.95,
+  "vat_amount": 6214,
+  "vat_amount_confidence": 0.95,
+  "total_amount": 58000,
+  "total_amount_confidence": 0.99,
+  "payment_method": "GCash",
+  "payment_method_confidence": 0.94,
+  "confidence": 0.97
+}

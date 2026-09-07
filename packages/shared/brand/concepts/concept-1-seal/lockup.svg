@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 40" width="100%" height="100%" fill="none">
+  <!-- Concept 1: The Perforated Seal of Katibayan (Horizontal Lockup) -->
+  <!-- 32x32 Mark on Left -->
+  <g transform="translate(4, 4)">
+    <path d="M10 2H22L30 10V22L22 30H10L2 22V10L10 2Z" fill="#0F172A" />
+    <circle cx="16" cy="4.5" r="1.25" fill="#FFFFFF" />
+    <circle cx="16" cy="27.5" r="1.25" fill="#FFFFFF" />
+    <circle cx="4.5" cy="16" r="1.25" fill="#FFFFFF" />
+    <circle cx="27.5" cy="16" r="1.25" fill="#FFFFFF" />
+    <path d="M8 8H13V24H8V8Z" fill="#FFFFFF" />
+    <path d="M14 15.5L20.5 8.5H25.5L18 16.5L25.5 24.5H20.5L14 17.5V15.5Z" fill="#C2410C" />
+  </g>
+
+  <!-- Wordmark: KATIBAY (Hand-drawn crisp vector glyphs for 100% font independence) -->
+  <g fill="#0F172A" transform="translate(48, 10)">
+    <!-- K -->
+    <path d="M0 0H5.5V20H0V0ZM5.5 10.5L13.5 0H20L11 11.5L20.5 20H14L5.5 12V10.5Z" />
+    <!-- A -->
+    <path d="M28.5 0H35.5L44 20H38.5L36.8 15.5H27.2L25.5 20H20L28.5 0ZM32 5.5L28.8 11.5H35.2L32 5.5Z" />
+    <!-- T -->
+    <path d="M46 0H62V4.8H56.5V20H51.5V4.8H46V0Z" />
+    <!-- I -->
+    <path d="M66 0H71.5V20H66V0Z" />
+    <!-- B -->
+    <path d="M76 0H86.5C89.5 0 92 1.2 92 4.5C92 6.8 90.5 8.2 88.5 8.8C91.2 9.4 93 11.2 93 14.5C93 18.2 90 20 86.5 20H76V0ZM81.5 4H85.5C86.8 4 87.8 4.6 87.8 6.2C87.8 7.8 86.8 8.4 85.5 8.4H81.5V4ZM81.5 11.6H86.5C88 11.6 89 12.4 89 14.2C89 16 88 16.8 86.5 16.8H81.5V11.6Z" />
+    <!-- A -->
+    <path d="M101.5 0H108.5L117 20H111.5L109.8 15.5H100.2L98.5 20H93L101.5 0ZM105 5.5L101.8 11.5H108.2L105 5.5Z" />
+    <!-- Y -->
+    <path d="M119 0H125L129.5 8.8L134 0H140L132.5 12.5V20H127V12.5L119 0Z" />
+  </g>
+
+  <!-- Subtitle Tag: VERIFIED RECEIPT AUDIT -->
+  <g fill="#64748B" transform="translate(49, 32)">
+    <text font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="6.5" font-weight="700" letter-spacing="1.2">VERIFIED AUDIT PIPELINE</text>
+  </g>
+</svg>

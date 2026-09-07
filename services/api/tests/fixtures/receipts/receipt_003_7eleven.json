@@ -1,0 +1,39 @@
+{
+  "merchant_name": "Philippine Seven Corporation",
+  "merchant_name_confidence": 0.97,
+  "merchant_tin": "000-888-999-000",
+  "merchant_tin_confidence": 0.94,
+  "merchant_address": "E. Rodriguez Sr. Ave, Quezon City",
+  "merchant_address_confidence": 0.88,
+  "txn_date": "2026-08-25",
+  "txn_date_confidence": 0.99,
+  "txn_time": "08:15",
+  "txn_time_confidence": 0.96,
+  "or_number": "OR-77889900",
+  "or_number_confidence": 0.95,
+  "line_items": [
+    {
+      "description": "City Cafe Brewed Coffee Large",
+      "qty": 1.0,
+      "unit_price": 5500,
+      "line_total": 5500,
+      "confidence": 0.98
+    },
+    {
+      "description": "7-Fresh Tuna Melt Sandwich",
+      "qty": 1.0,
+      "unit_price": 6500,
+      "line_total": 6500,
+      "confidence": 0.97
+    }
+  ],
+  "subtotal": 10714,
+  "subtotal_confidence": 0.92,
+  "vat_amount": 1286,
+  "vat_amount_confidence": 0.92,
+  "total_amount": 12000,
+  "total_amount_confidence": 0.99,
+  "payment_method": "Maya",
+  "payment_method_confidence": 0.95,
+  "confidence": 0.96
+}
