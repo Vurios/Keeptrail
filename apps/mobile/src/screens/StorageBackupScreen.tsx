@@ -9,91 +9,155 @@ import {
   Modal,
   TextInput,
   Alert,
+  Platform,
+  StatusBar,
+  KeyboardAvoidingView,
+  ActivityIndicator,
 } from "react-native";
-import { colors, spacing, borderRadius, typography } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
+import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
+import { haptics } from "../utils/haptics";
 
 interface StorageBackupScreenProps {
   onBack: () => void;
 }
 
-export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
-  onBack,
-}) => {
-  const {
-    stats,
-    exportEncryptedBackup,
-    restoreFromEncryptedBackup,
-    emptyTrash,
-  } = useLocalVault();
+export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({ onBack }) => {
+  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
+  const { stats, exportEncryptedBackup, restoreFromEncryptedBackup, emptyTrash } = useLocalVault();
+  const { showToast } = useToast();
 
   // Export modal state
   const [isExporting, setIsExporting] = useState(false);
   const [exportPassword, setExportPassword] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
   const [lastExportedBytes, setLastExportedBytes] = useState<Uint8Array | null>(null);
+  const [isExportProcessing, setIsExportProcessing] = useState(false);
 
   // Restore modal state
   const [isRestoring, setIsRestoring] = useState(false);
   const [restorePassword, setRestorePassword] = useState("");
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [isRestoreProcessing, setIsRestoreProcessing] = useState(false);
 
-  const handleRunExport = () => {
-    if (!exportPassword || exportPassword.length < 4) {
-      Alert.alert("Password Required", "Please enter a backup password of at least 4 characters.");
-      return;
-    }
-
-    try {
-      const bytes = exportEncryptedBackup(exportPassword);
-      setLastExportedBytes(bytes);
-      setIsExporting(false);
-      setExportPassword("");
-      Alert.alert(
-        "Backup File Saved",
-        `Created encrypted .keeptrail backup (${(bytes.length / 1024).toFixed(1)} KB).\n\nKeep a copy away from this phone (e.g. computer or USB drive) to protect against device loss.`
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Export Error", msg);
+  const handleExportPasswordChange = (text: string) => {
+    setExportPassword(text);
+    if (text.length >= 4) {
+      setExportError(null);
     }
   };
 
+  const handleRestorePasswordChange = (text: string) => {
+    setRestorePassword(text);
+    if (text.trim()) {
+      setRestoreError(null);
+    }
+  };
+
+  const handleRunExport = () => {
+    if (isExportProcessing) return;
+
+    if (!exportPassword || exportPassword.length < 4) {
+      haptics.error();
+      setExportError("Password must be at least 4 characters long");
+      return;
+    }
+
+    setIsExportProcessing(true);
+    // Allow UI to render loading state
+    setTimeout(() => {
+      try {
+        const bytes = exportEncryptedBackup(exportPassword);
+        setLastExportedBytes(bytes);
+        setIsExporting(false);
+        setExportPassword("");
+        setExportError(null);
+        haptics.success();
+        showToast({
+          type: "success",
+          title: "Encrypted Backup Created",
+          message: `Saved .keeptrail container (${(bytes.length / 1024).toFixed(
+            1,
+          )} KB) with AES-256-GCM. Keep a copy away from this phone.`,
+          duration: 4000,
+        });
+      } catch (err: unknown) {
+        haptics.error();
+        const msg = err instanceof Error ? err.message : String(err);
+        showToast({
+          type: "error",
+          title: "Export Failed",
+          message: msg,
+        });
+      } finally {
+        setIsExportProcessing(false);
+      }
+    }, 50);
+  };
+
   const handleRunRestore = () => {
+    if (isRestoreProcessing) return;
+
     if (!lastExportedBytes) {
-      Alert.alert(
-        "No Local Archive Selected",
-        "Please generate a backup first or select an existing .keeptrail file."
-      );
+      haptics.error();
+      showToast({
+        type: "warning",
+        title: "No Archive Selected",
+        message: "Generate a backup archive first or select an existing .keeptrail file.",
+      });
       return;
     }
 
     if (!restorePassword) {
-      Alert.alert("Password Required", "Enter the archive password to decrypt.");
+      haptics.error();
+      setRestoreError("Enter the archive password to decrypt");
       return;
     }
 
-    try {
-      const result = restoreFromEncryptedBackup(lastExportedBytes, restorePassword);
-      setIsRestoring(false);
-      setRestorePassword("");
-      Alert.alert(
-        "Restore Complete",
-        `Successfully restored and verified ${result.receiptCount} receipt(s) and ${result.attachmentCount} attachment(s). All SHA-256 integrity checks passed.`
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Restoration Failed", msg);
-    }
+    setIsRestoreProcessing(true);
+    setTimeout(() => {
+      try {
+        const result = restoreFromEncryptedBackup(lastExportedBytes, restorePassword);
+        setIsRestoring(false);
+        setRestorePassword("");
+        setRestoreError(null);
+        haptics.success();
+        showToast({
+          type: "success",
+          title: "Restore Complete",
+          message: `Verified and restored ${result.receiptCount} receipt(s) and ${result.attachmentCount} attachment(s). All SHA-256 checks passed.`,
+          duration: 4000,
+        });
+      } catch (err: unknown) {
+        haptics.error();
+        const msg = err instanceof Error ? err.message : String(err);
+        setRestoreError("Incorrect password or corrupted archive");
+        showToast({
+          type: "error",
+          title: "Restoration Failed",
+          message: msg,
+        });
+      } finally {
+        setIsRestoreProcessing(false);
+      }
+    }, 50);
   };
 
   const handleEmptyTrash = () => {
     if (stats.trashedCount === 0) {
-      Alert.alert("Trash Empty", "There are no receipts in Trash.");
+      showToast({
+        type: "info",
+        title: "Trash is Empty",
+        message: "There are no receipts in Trash to delete.",
+      });
       return;
     }
 
+    // Keep native confirmation dialog for destructive action
     Alert.alert(
-      "Empty Trash",
-      `Are you sure you want to permanently delete ${stats.trashedCount} trashed receipt(s)? This cannot be undone.`,
+      "Empty Trash Permanently",
+      `Are you sure you want to permanently delete ${stats.trashedCount} trashed receipt(s)? This action cannot be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -101,10 +165,15 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
           style: "destructive",
           onPress: () => {
             const count = emptyTrash();
-            Alert.alert("Trash Cleared", `Permanently removed ${count} receipt(s).`);
+            haptics.warning();
+            showToast({
+              type: "success",
+              title: "Trash Cleared",
+              message: `Permanently removed ${count} receipt(s) from storage.`,
+            });
           },
         },
-      ]
+      ],
     );
   };
 
@@ -115,63 +184,115 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>‹ Back</Text>
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              haptics.tap();
+              onBack();
+            }}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to Home"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.backBtnText, { color: colors.primary }]}>‹ Back</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Storage & Backup</Text>
-          <View style={{ width: 44 }} />
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Storage & Vault</Text>
+          <View style={{ width: 54 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Honest Local Warning Notice */}
-          <View style={styles.noticeCard}>
-            <Text style={styles.noticeIcon}>🛡️</Text>
+          {/* Local Security Assurance Notice */}
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={[styles.noticeIconCircle, { backgroundColor: colors.surfaceAlt }]}>
+              <Text style={styles.noticeIcon}>🛡️</Text>
+            </View>
             <View style={styles.noticeTextCol}>
-              <Text style={styles.noticeTitle}>Saved on this phone</Text>
-              <Text style={styles.noticeDesc}>
-                Your receipts are stored locally in a private vault on this device.
-                Export an encrypted backup to protect against phone loss, damage,
-                or app uninstall.
+              <Text style={[styles.noticeTitle, { color: colors.textPrimary }]}>
+                Saved on this phone
+              </Text>
+              <Text style={[styles.noticeDesc, { color: colors.textSecondary }]}>
+                Your receipts are stored locally in a private vault on this device. Export an
+                encrypted backup to protect against phone loss, damage, or app uninstall.
               </Text>
             </View>
           </View>
 
           {/* Measured Storage Usage */}
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>Measured Storage Breakdown</Text>
-            <View style={styles.statsCard}>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>Active Receipts</Text>
-                <Text style={styles.statValue}>{stats.receiptCount}</Text>
+            <Text style={[styles.sectionHeader, { color: colors.textPrimary }]}>
+              Measured Storage Breakdown
+            </Text>
+            <View
+              style={[
+                styles.statsCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={[styles.statRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Active Receipts
+                </Text>
+                <Text style={[styles.statValue, { color: colors.textPrimary }]}>
+                  {stats.receiptCount}
+                </Text>
               </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>Original Evidence Files</Text>
-                <Text style={styles.statValue}>
+              <View style={[styles.statRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Original Evidence Files
+                </Text>
+                <Text style={[styles.statValue, { color: colors.textPrimary }]}>
                   {stats.attachmentCount} ({formatBytes(stats.totalAttachmentBytes)})
                 </Text>
               </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>Local Database (Estimated)</Text>
-                <Text style={styles.statValue}>
+              <View style={[styles.statRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Local Database (Estimated)
+                </Text>
+                <Text style={[styles.statValue, { color: colors.textPrimary }]}>
                   {formatBytes(stats.databaseEstimatedBytes)}
                 </Text>
               </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>In Trash (Pending Purge)</Text>
-                <Text style={styles.statValue}>{stats.trashedCount}</Text>
+              <View style={[styles.statRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  In Trash (Pending Purge)
+                </Text>
+                <Text style={[styles.statValue, { color: colors.textPrimary }]}>
+                  {stats.trashedCount}
+                </Text>
               </View>
               <View style={[styles.statRow, styles.statRowLast]}>
-                <Text style={styles.statLabel}>Changes Since Last Backup</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Changes Since Last Backup
+                </Text>
                 <Text
                   style={[
                     styles.statValue,
                     stats.recordsModifiedSinceLastBackup > 0
-                      ? styles.statWarn
-                      : styles.statOk,
+                      ? { color: colors.status.warning.text, fontWeight: "700" }
+                      : { color: colors.status.success.text, fontWeight: "700" },
                   ]}
                 >
                   {stats.recordsModifiedSinceLastBackup > 0
@@ -184,32 +305,56 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
 
           {/* Backup & Restore Controls */}
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>Encrypted Data Portability</Text>
-            <View style={styles.actionsCard}>
+            <Text style={[styles.sectionHeader, { color: colors.textPrimary }]}>
+              Encrypted Data Portability
+            </Text>
+            <View
+              style={[
+                styles.actionsCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.primaryActionBtn}
-                onPress={() => setIsExporting(true)}
+                onPress={() => {
+                  haptics.tap();
+                  setIsExporting(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Back up receipts to encrypted file"
               >
                 <Text style={styles.actionBtnIcon}>📦</Text>
                 <View style={styles.actionBtnCol}>
-                  <Text style={styles.primaryActionTitle}>Back Up Receipts</Text>
-                  <Text style={styles.actionSubtitle}>
-                    Export password-protected .keeptrail archive
+                  <Text style={[styles.primaryActionTitle, { color: colors.primary }]}>
+                    Export Encrypted Backup
+                  </Text>
+                  <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>
+                    Create password-protected .keeptrail archive (AES-256-GCM)
                   </Text>
                 </View>
               </TouchableOpacity>
 
-              <View style={styles.divider} />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
               <TouchableOpacity
                 style={styles.secondaryActionBtn}
-                onPress={() => setIsRestoring(true)}
+                onPress={() => {
+                  haptics.tap();
+                  setIsRestoring(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Restore backup from encrypted file"
               >
                 <Text style={styles.actionBtnIcon}>📥</Text>
                 <View style={styles.actionBtnCol}>
-                  <Text style={styles.secondaryActionTitle}>Restore Backup</Text>
-                  <Text style={styles.actionSubtitle}>
-                    Import and verify an existing .keeptrail file
+                  <Text style={[styles.secondaryActionTitle, { color: colors.textPrimary }]}>
+                    Restore From Backup
+                  </Text>
+                  <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>
+                    Import and cryptographically verify a .keeptrail file
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -218,120 +363,266 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
 
           {/* Trash Management */}
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>Trash & Cleanup</Text>
-            <View style={styles.trashCard}>
+            <Text style={[styles.sectionHeader, { color: colors.textPrimary }]}>
+              Trash & Storage Cleanup
+            </Text>
+            <View
+              style={[
+                styles.trashCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               <View style={styles.trashInfoRow}>
-                <Text style={styles.trashText}>
-                  {stats.trashedCount} item(s) currently in Trash
+                <Text style={[styles.trashText, { color: colors.textPrimary }]}>
+                  {stats.trashedCount} item(s) in Trash
                 </Text>
                 <TouchableOpacity
-                  style={styles.emptyTrashBtn}
+                  style={[
+                    styles.emptyTrashBtn,
+                    {
+                      backgroundColor: colors.status.danger.bg,
+                      borderColor: colors.status.danger.border,
+                      opacity: stats.trashedCount === 0 ? 0.5 : 1,
+                    },
+                  ]}
                   onPress={handleEmptyTrash}
+                  accessibilityRole="button"
+                  accessibilityLabel="Empty trash permanently"
                 >
-                  <Text style={styles.emptyTrashBtnText}>Empty Trash</Text>
+                  <Text style={[styles.emptyTrashText, { color: colors.status.danger.text }]}>
+                    Empty Trash
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
-
-          {/* About Pilot Information */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>About This Free Pilot</Text>
-            <View style={styles.aboutCard}>
-              <Text style={styles.aboutVersion}>Keeptrail v1.0.0-pilot (Free Local)</Text>
-              <Text style={styles.aboutText}>
-                • No accounts or registration required{"\n"}
-                • Zero cloud inference or remote backend dependencies{"\n"}
-                • Pretrained on-device models & deterministic math tools{"\n"}
-                • No subscriptions, paywalls, or in-app purchases{"\n"}
-                • Your data belongs to you on your device
+              <Text style={[styles.trashWarning, { color: colors.textSecondary }]}>
+                Receipts in Trash remain recoverable until you empty the trash or permanently delete
+                them.
               </Text>
             </View>
           </View>
         </ScrollView>
 
-        {/* Export Password Modal */}
+        {/* Export Backup Modal */}
         <Modal
           visible={isExporting}
-          animationType="fade"
-          transparent
+          animationType="slide"
+          presentationStyle="formSheet"
           onRequestClose={() => setIsExporting(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.dialogCard}>
-              <Text style={styles.dialogTitle}>Set Backup Password</Text>
-              <Text style={styles.dialogDesc}>
-                Choose a strong password to encrypt your receipts. This password
-                will be required to restore your vault. We cannot reset it.
-              </Text>
-
-              <TextInput
-                style={styles.dialogInput}
-                placeholder="Enter backup password..."
-                secureTextEntry
-                value={exportPassword}
-                onChangeText={setExportPassword}
-              />
-
-              <View style={styles.dialogBtnRow}>
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
+              <View
+                style={[
+                  styles.modalHeader,
+                  {
+                    backgroundColor: colors.surface,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+              >
                 <TouchableOpacity
-                  style={styles.dialogCancel}
-                  onPress={() => setIsExporting(false)}
+                  onPress={() => {
+                    haptics.tap();
+                    setIsExporting(false);
+                    setExportError(null);
+                  }}
+                  style={styles.modalHeaderBtn}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.dialogCancelText}>Cancel</Text>
+                  <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
-
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                  Export Backup
+                </Text>
                 <TouchableOpacity
-                  style={styles.dialogConfirm}
                   onPress={handleRunExport}
+                  style={[
+                    styles.modalDoneBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      opacity: isExportProcessing ? 0.6 : 1,
+                    },
+                  ]}
+                  disabled={isExportProcessing}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.dialogConfirmText}>Export</Text>
+                  {isExportProcessing ? (
+                    <ActivityIndicator size="small" color={colors.primaryFg} />
+                  ) : (
+                    <Text style={[styles.modalDone, { color: colors.primaryFg }]}>Export</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+
+              <ScrollView
+                style={styles.modalForm}
+                contentContainerStyle={{ padding: 16 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                  Set Archive Password (AES-256-GCM) *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: exportError ? colors.status.danger.border : colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="Minimum 4 characters"
+                  placeholderTextColor={colors.textMuted}
+                  value={exportPassword}
+                  onChangeText={handleExportPasswordChange}
+                  secureTextEntry
+                />
+                {exportError ? (
+                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
+                    {exportError}
+                  </Text>
+                ) : (
+                  <Text style={[styles.inputHelp, { color: colors.textMuted }]}>
+                    Your password derives the AES key using PBKDF2 (100,000 rounds). Store it
+                    safely.
+                  </Text>
+                )}
+
+                <View
+                  style={[
+                    styles.backupTipCard,
+                    {
+                      backgroundColor: colors.surfaceAlt,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.backupTipTitle, { color: colors.primary }]}>
+                    🔒 No Account Recovery Notice
+                  </Text>
+                  <Text style={[styles.backupTipDesc, { color: colors.textSecondary }]}>
+                    Because Keeptrail operates 100% locally on your phone without cloud accounts,
+                    there is no password reset. If you lose this password, this backup file cannot
+                    be restored.
+                  </Text>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
 
-        {/* Restore Password Modal */}
+        {/* Restore Backup Modal */}
         <Modal
           visible={isRestoring}
-          animationType="fade"
-          transparent
+          animationType="slide"
+          presentationStyle="formSheet"
           onRequestClose={() => setIsRestoring(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.dialogCard}>
-              <Text style={styles.dialogTitle}>Restore Backup Archive</Text>
-              <Text style={styles.dialogDesc}>
-                Enter the password used when creating this .keeptrail backup to
-                decrypt and verify all files.
-              </Text>
-
-              <TextInput
-                style={styles.dialogInput}
-                placeholder="Enter archive password..."
-                secureTextEntry
-                value={restorePassword}
-                onChangeText={setRestorePassword}
-              />
-
-              <View style={styles.dialogBtnRow}>
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
+              <View
+                style={[
+                  styles.modalHeader,
+                  {
+                    backgroundColor: colors.surface,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+              >
                 <TouchableOpacity
-                  style={styles.dialogCancel}
-                  onPress={() => setIsRestoring(false)}
+                  onPress={() => {
+                    haptics.tap();
+                    setIsRestoring(false);
+                    setRestoreError(null);
+                  }}
+                  style={styles.modalHeaderBtn}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.dialogCancelText}>Cancel</Text>
+                  <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
-
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                  Restore Vault
+                </Text>
                 <TouchableOpacity
-                  style={styles.dialogConfirm}
                   onPress={handleRunRestore}
+                  style={[
+                    styles.modalDoneBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      opacity: isRestoreProcessing ? 0.6 : 1,
+                    },
+                  ]}
+                  disabled={isRestoreProcessing}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.dialogConfirmText}>Restore</Text>
+                  {isRestoreProcessing ? (
+                    <ActivityIndicator size="small" color={colors.primaryFg} />
+                  ) : (
+                    <Text style={[styles.modalDone, { color: colors.primaryFg }]}>Restore</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+
+              <ScrollView
+                style={styles.modalForm}
+                contentContainerStyle={{ padding: 16 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                  Archive Decryption Password *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: restoreError
+                        ? colors.status.danger.border
+                        : colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="Enter archive password"
+                  placeholderTextColor={colors.textMuted}
+                  value={restorePassword}
+                  onChangeText={handleRestorePasswordChange}
+                  secureTextEntry
+                />
+                {restoreError && (
+                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
+                    {restoreError}
+                  </Text>
+                )}
+
+                <View
+                  style={[
+                    styles.backupTipCard,
+                    {
+                      backgroundColor: colors.surfaceAlt,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.backupTipTitle, { color: colors.primary }]}>
+                    ℹ️ Verification Guarantee
+                  </Text>
+                  <Text style={[styles.backupTipDesc, { color: colors.textSecondary }]}>
+                    During restoration, Keeptrail recalculates the SHA-256 hash of every receipt
+                    attachment to verify that zero data corruption occurred during transfer.
+                  </Text>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
       </View>
     </SafeAreaView>
@@ -341,7 +632,7 @@ export const StorageBackupScreen: React.FC<StorageBackupScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.brand.background,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   container: {
     flex: 1,
@@ -350,237 +641,236 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 16,
+    height: 56,
     borderBottomWidth: 1,
-    borderBottomColor: colors.brand.border,
   },
   backBtn: {
-    paddingVertical: 4,
+    minWidth: 54,
+    minHeight: 44,
+    justifyContent: "center",
   },
   backBtnText: {
-    ...typography.bodyBold,
-    color: colors.brand.primary,
+    fontSize: 16,
+    fontWeight: "700",
   },
   headerTitle: {
-    ...typography.sectionTitle,
-    color: colors.brand.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
   },
   content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl * 2,
+    padding: 16,
+    paddingBottom: 100,
   },
   noticeCard: {
     flexDirection: "row",
-    backgroundColor: colors.brand.surfaceAlt,
-    borderRadius: borderRadius.card,
-    padding: spacing.md,
+    padding: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.status.success.border,
-    marginBottom: spacing.lg,
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  noticeIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
   },
   noticeIcon: {
-    fontSize: 24,
-    marginRight: spacing.md,
-    marginTop: 2,
+    fontSize: 22,
   },
   noticeTextCol: {
     flex: 1,
   },
   noticeTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.primary,
+    fontSize: 15,
+    fontWeight: "700",
   },
   noticeDesc: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    marginTop: 4,
-    lineHeight: 18,
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 16,
   },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: 20,
   },
   sectionHeader: {
-    ...typography.caption,
+    fontSize: 15,
     fontWeight: "700",
-    color: colors.brand.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   statsCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    paddingHorizontal: spacing.md,
+    overflow: "hidden",
   },
   statRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.brand.border,
+    paddingHorizontal: 16,
+    borderBottomWidth: 0.5,
   },
   statRowLast: {
     borderBottomWidth: 0,
   },
   statLabel: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
   },
   statValue: {
-    ...typography.supporting,
+    fontSize: 14,
     fontWeight: "600",
-    color: colors.brand.textPrimary,
-  },
-  statWarn: {
-    color: colors.status.warning.text,
-  },
-  statOk: {
-    color: colors.brand.primary,
+    fontVariant: ["tabular-nums"],
   },
   actionsCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.brand.border,
     overflow: "hidden",
   },
   primaryActionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    padding: spacing.md,
+    padding: 16,
+    minHeight: 64,
   },
   secondaryActionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    padding: spacing.md,
+    padding: 16,
+    minHeight: 64,
   },
   actionBtnIcon: {
-    fontSize: 24,
-    marginRight: spacing.md,
+    fontSize: 26,
+    marginRight: 12,
   },
   actionBtnCol: {
     flex: 1,
   },
   primaryActionTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.primary,
+    fontSize: 15,
+    fontWeight: "700",
   },
   secondaryActionTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
   },
   actionSubtitle: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 12,
     marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: colors.brand.border,
   },
   trashCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    padding: spacing.md,
+    padding: 16,
   },
   trashInfoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8,
   },
   trashText: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
   },
   emptyTrashBtn: {
-    backgroundColor: "#FEECE9",
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: borderRadius.md,
-  },
-  emptyTrashBtnText: {
-    ...typography.caption,
-    fontWeight: "700",
-    color: "#B42318",
-  },
-  aboutCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    padding: spacing.md,
-  },
-  aboutVersion: {
-    ...typography.bodyBold,
-    color: colors.brand.primary,
-    marginBottom: 6,
-  },
-  aboutText: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    lineHeight: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    minHeight: 36,
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing.lg,
   },
-  dialogCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
-    width: "100%",
-    maxWidth: 360,
+  emptyTrashText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
-  dialogTitle: {
-    ...typography.sectionTitle,
-    color: colors.brand.textPrimary,
+  trashWarning: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  modalSafe: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    height: 56,
+    borderBottomWidth: 1,
+  },
+  modalHeaderBtn: {
+    minWidth: 54,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  modalCancel: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  modalDoneBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    minHeight: 36,
+    minWidth: 64,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalDone: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  modalForm: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
     marginBottom: 6,
   },
-  dialogDesc: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    lineHeight: 18,
-    marginBottom: spacing.md,
-  },
-  dialogInput: {
-    backgroundColor: colors.brand.background,
-    borderWidth: 1,
-    borderColor: colors.brand.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
+  textInput: {
     height: 48,
-    ...typography.body,
-    marginBottom: spacing.lg,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
   },
-  dialogBtnRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
+  inlineError: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
-  dialogCancel: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginRight: spacing.sm,
+  inputHelp: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
   },
-  dialogCancelText: {
-    ...typography.body,
-    color: colors.brand.textSecondary,
+  backupTipCard: {
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 20,
   },
-  dialogConfirm: {
-    backgroundColor: colors.brand.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: borderRadius.md,
+  backupTipTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 4,
   },
-  dialogConfirmText: {
-    ...typography.bodyBold,
-    color: colors.brand.primaryFg,
+  backupTipDesc: {
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

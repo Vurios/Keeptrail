@@ -7,7 +7,7 @@ import {
 } from "./deterministic-money";
 import { extractReceiptFromText } from "./ocr-extractor";
 import { AskKeeptrailEngine } from "./assistant-engine";
-import type { ReceiptRecord, ActionRecord, CollectionRecord } from "./types";
+import type { ReceiptRecord, ActionRecord } from "./types";
 
 describe("L1: Deterministic Money Tools", () => {
   it("formats integer minor units to locale currency strings without rounding drift", () => {
@@ -143,13 +143,13 @@ describe("L1: On-Device Receipt Extractor", () => {
       BRANCH 1024 MAKATI
       TIN: 000-123-456-789
       DATE: 2026-09-05
-      
+
       1 1PC CHICKENJOY W/ RICE    120.00
       1 PEACH MANGO PIE            45.00
       SUBTOTAL                    165.00
       VAT 12%                      19.80
       TOTAL AMOUNT DUE          ₱ 184.80
-      
+
       THANK YOU FOR DINING WITH US!
     `;
 

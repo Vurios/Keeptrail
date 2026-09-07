@@ -8,9 +8,13 @@ import {
   ScrollView,
   SafeAreaView,
   TextInput,
+  Platform,
+  StatusBar,
+  KeyboardAvoidingView,
 } from "react-native";
-import { colors, spacing, borderRadius, typography } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import { useLocalVault } from "../vault-context";
+import { haptics } from "../utils/haptics";
 
 interface OnboardingModalProps {
   visible: boolean;
@@ -21,6 +25,7 @@ interface OnboardingModalProps {
 type OnboardingStep = 1 | 2 | 3 | 4 | 5;
 
 export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: OnboardingModalProps) {
+  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
   const { saveReceipt } = useLocalVault();
   const [step, setStep] = useState<OnboardingStep>(1);
 
@@ -29,13 +34,30 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
   const [amountInput, setAmountInput] = useState("450.00");
   const [purpose, setPurpose] = useState("Office supplies & notebooks");
   const [savedReceiptId, setSavedReceiptId] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleAmountChange = (text: string) => {
+    setAmountInput(text);
+    if (!text.trim()) {
+      setAmountError(null);
+      return;
+    }
+    const clean = text.replace(/,/g, "").trim();
+    if (isNaN(Number(clean)) || Number(clean) < 0) {
+      setAmountError("Please enter a valid amount (e.g. 450.00)");
+    } else {
+      setAmountError(null);
+    }
+  };
 
   const handleGetStarted = () => {
+    haptics.tap();
     setStep(2);
   };
 
   const handleSeeExample = () => {
-    // Closes onboarding and shows sample record
+    haptics.tap();
     onClose();
     if (onOpenSampleReceipt) {
       onOpenSampleReceipt();
@@ -43,10 +65,12 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
   };
 
   const handleAcceptLocalVault = () => {
+    haptics.tap();
     setStep(3);
   };
 
   const handleSelectCaptureMode = (mode: "camera" | "gallery" | "manual") => {
+    haptics.tap();
     if (mode === "manual") {
       setMerchant("");
       setAmountInput("");
@@ -56,10 +80,19 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
       setAmountInput("450.00");
       setPurpose("Office supplies & notebooks");
     }
+    setAmountError(null);
     setStep(4);
   };
 
   const handleQuickSave = () => {
+    if (isSaving) return;
+
+    if (amountError) {
+      haptics.error();
+      return;
+    }
+
+    setIsSaving(true);
     const rawMinor = amountInput.trim()
       ? Math.round(parseFloat(amountInput.replace(/[^0-9.]/g, "")) * 100)
       : null;
@@ -83,319 +116,570 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
       deleted_at: null,
     });
 
+    haptics.success();
     setSavedReceiptId(newRecord.id);
+    setIsSaving(false);
     setStep(5);
   };
 
   const handleFinish = () => {
+    haptics.tap();
     onClose();
     setStep(1);
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
-        {/* Step Indicator Header */}
-        <View style={styles.stepHeader}>
-          <View style={styles.stepProgressContainer}>
-            {([1, 2, 3, 4, 5] as OnboardingStep[]).map((s) => (
-              <View key={s} style={[styles.progressDot, s <= step && styles.progressDotActive]} />
-            ))}
-          </View>
-          {step > 1 && (
-            <TouchableOpacity
-              onPress={handleFinish}
-              style={styles.skipButton}
-              accessibilityLabel="Skip Onboarding"
-            >
-              <Text style={styles.skipText}>Skip</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {/* ======================================================= */}
-          {/* SCREEN 1: Welcome                                       */}
-          {/* ======================================================= */}
-          {step === 1 && (
-            <View style={styles.stepContainer}>
-              {/* Minimal Vector Mark */}
-              <View style={styles.brandMarkContainer}>
-                <View style={styles.foldedDocSymbol}>
-                  <View style={styles.symbolCorner} />
-                  <View style={styles.symbolTrailLine1} />
-                  <View style={styles.symbolTrailLine2} />
-                  <View style={styles.symbolTrailDot} />
-                </View>
-              </View>
-
-              <Text style={styles.title}>Keep the receipts that matter.</Text>
-              <Text style={styles.subtitle}>
-                Save photos and screenshots. Find them when you need them.
-              </Text>
-
-              {/* Realistic Fictional Sample Card */}
-              <View style={styles.sampleReceiptCard}>
-                <View style={styles.sampleCardHeader}>
-                  <Text style={styles.sampleMerchant}>Mercury Drug</Text>
-                  <Text style={styles.sampleAmount}>₱ 328.50</Text>
-                </View>
-                <Text style={styles.sampleDate}>Aug 28, 2026 • Medical prescription</Text>
-                <View style={styles.sampleTagRow}>
-                  <View style={styles.sampleBadge}>
-                    <Text style={styles.sampleBadgeText}>Saved on this phone</Text>
-                  </View>
-                  <View style={[styles.sampleBadge, styles.sampleBadgeAlt]}>
-                    <Text style={[styles.sampleBadgeText, styles.sampleBadgeAltText]}>In Box</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.actionGroup}>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={handleGetStarted}
-                  activeOpacity={0.85}
-                  accessibilityLabel="Get started with Keeptrail"
-                >
-                  <Text style={styles.primaryBtnText}>Get started</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={handleSeeExample}
-                  activeOpacity={0.85}
-                  accessibilityLabel="See an example receipt"
-                >
-                  <Text style={styles.secondaryBtnText}>See an example</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Step Indicator Header */}
+          <View
+            style={[
+              styles.stepHeader,
+              {
+                backgroundColor: colors.surface,
+                borderBottomColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.stepProgressContainer}>
+              {([1, 2, 3, 4, 5] as OnboardingStep[]).map((s) => (
+                <View
+                  key={s}
+                  style={[
+                    styles.progressDot,
+                    {
+                      backgroundColor: s <= step ? colors.primary : colors.border,
+                    },
+                  ]}
+                />
+              ))}
             </View>
-          )}
-
-          {/* ======================================================= */}
-          {/* SCREEN 2: Local Vault Notice (No Accounts / Honest Privacy) */}
-          {/* ======================================================= */}
-          {step === 2 && (
-            <View style={styles.stepContainer}>
-              <View style={styles.iconCircle}>
-                <Text style={styles.iconCircleGlyph}>🛡️</Text>
-              </View>
-
-              <Text style={styles.title}>Private on this phone.</Text>
-              <Text style={styles.subtitle}>
-                No account required. Your receipts and photos stay in a private vault on this
-                device.
-              </Text>
-
-              <View style={styles.infoBox}>
-                <Text style={styles.infoBoxTitle}>What this means for you</Text>
-                <Text style={styles.infoItem}>
-                  • <Text style={styles.infoItemBold}>Zero Cloud Uploads:</Text> We do not operate a
-                  receipt backend or upload your photos to remote servers.
-                </Text>
-                <Text style={styles.infoItem}>
-                  • <Text style={styles.infoItemBold}>Offline First:</Text> OCR, search, and
-                  calculations run entirely on your phone without an internet connection.
-                </Text>
-                <Text style={styles.infoItem}>
-                  • <Text style={styles.infoItemBold}>Encrypted Backup:</Text> Export AES-256
-                  encrypted backups whenever you want to transfer or protect your records.
-                </Text>
-              </View>
-
-              <View style={styles.cautionBox}>
-                <Text style={styles.cautionText}>
-                  ⚠️ Note: Because there are no accounts, we cannot reset a forgotten backup
-                  password. Keep your backup password safe.
-                </Text>
-              </View>
-
+            {step > 1 && (
               <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleAcceptLocalVault}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryBtnText}>I understand — Continue</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ======================================================= */}
-          {/* SCREEN 3: First Receipt Capture Choice                  */}
-          {/* ======================================================= */}
-          {step === 3 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.title}>Save your first receipt.</Text>
-              <Text style={styles.subtitle}>
-                Choose how you want to add evidence into your private vault.
-              </Text>
-
-              <View style={styles.choiceGroup}>
-                <TouchableOpacity
-                  style={styles.choiceCard}
-                  onPress={() => handleSelectCaptureMode("camera")}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.choiceIcon}>📷</Text>
-                  <View style={styles.choiceTextCol}>
-                    <Text style={styles.choiceTitle}>Take a photo</Text>
-                    <Text style={styles.choiceDesc}>Snap a paper receipt or physical invoice</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.choiceCard}
-                  onPress={() => handleSelectCaptureMode("gallery")}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.choiceIcon}>🖼️</Text>
-                  <View style={styles.choiceTextCol}>
-                    <Text style={styles.choiceTitle}>Choose a photo</Text>
-                    <Text style={styles.choiceDesc}>
-                      Import a screenshot or saved receipt image
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.choiceCard}
-                  onPress={() => handleSelectCaptureMode("manual")}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.choiceIcon}>✍️</Text>
-                  <View style={styles.choiceTextCol}>
-                    <Text style={styles.choiceTitle}>Enter manually</Text>
-                    <Text style={styles.choiceDesc}>Record details directly without an image</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.secondaryBtn}
                 onPress={handleFinish}
-                activeOpacity={0.85}
+                style={styles.skipButton}
+                accessibilityLabel="Skip Onboarding"
+                accessibilityRole="button"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.secondaryBtnText}>Maybe later</Text>
+                <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
               </TouchableOpacity>
-            </View>
-          )}
+            )}
+          </View>
 
-          {/* ======================================================= */}
-          {/* SCREEN 4: Quick Save and Review                         */}
-          {/* ======================================================= */}
-          {step === 4 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.title}>Quick Save & Review</Text>
-              <Text style={styles.subtitle}>
-                Review details. You can save immediately before on-device recognition completes.
-              </Text>
-
-              {/* Form inputs */}
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Merchant / Payee</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={merchant}
-                  onChangeText={setMerchant}
-                  placeholder="e.g. National Bookstore, Shell"
-                  placeholderTextColor={colors.brand.textMuted}
-                />
-
-                <Text style={styles.inputLabel}>Total Amount (₱)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={amountInput}
-                  onChangeText={setAmountInput}
-                  placeholder="0.00"
-                  keyboardType="numeric"
-                  placeholderTextColor={colors.brand.textMuted}
-                />
-
-                <Text style={styles.inputLabel}>What is this for? (Optional)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={purpose}
-                  onChangeText={setPurpose}
-                  placeholder="e.g. Project supplies, warranty proof"
-                  placeholderTextColor={colors.brand.textMuted}
-                />
-
-                <View style={styles.metaRow}>
-                  <Text style={styles.metaLabel}>Default Collection:</Text>
-                  <View style={styles.inboxPill}>
-                    <Text style={styles.inboxPillText}>📥 Inbox</Text>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* ======================================================= */}
+            {/* SCREEN 1: Welcome                                       */}
+            {/* ======================================================= */}
+            {step === 1 && (
+              <View style={styles.stepContainer}>
+                {/* Brand Symbol */}
+                <View style={styles.brandMarkContainer}>
+                  <View style={[styles.foldedDocSymbol, { backgroundColor: colors.primary }]}>
+                    <View
+                      style={[styles.symbolCorner, { backgroundColor: colors.primaryPressed }]}
+                    />
+                    <View
+                      style={[styles.symbolTrailLine1, { backgroundColor: colors.primaryFg }]}
+                    />
+                    <View
+                      style={[styles.symbolTrailLine2, { backgroundColor: colors.primaryFg }]}
+                    />
+                    <View style={[styles.symbolTrailDot, { backgroundColor: colors.primaryFg }]} />
                   </View>
                 </View>
-              </View>
 
-              <View style={styles.actionGroup}>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={handleQuickSave}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.primaryBtnText}>Save receipt</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={handleFinish}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.secondaryBtnText}>Finish later</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* ======================================================= */}
-          {/* SCREEN 5: First Value (Confirmation & Discovery)       */}
-          {/* ======================================================= */}
-          {step === 5 && (
-            <View style={styles.stepContainer}>
-              <View style={styles.successIconCircle}>
-                <Text style={styles.successIconGlyph}>✓</Text>
-              </View>
-
-              <Text style={styles.title}>Saved on this phone.</Text>
-              <Text style={styles.subtitle}>
-                Your receipt is securely saved in your local SQLite vault.
-              </Text>
-
-              {/* Tip card */}
-              <View style={styles.tipCard}>
-                <Text style={styles.tipTitle}>💡 Quick Tip</Text>
-                <Text style={styles.tipDesc}>
-                  You can find this later by searching for "{merchant || "Bookstore"}", item
-                  keywords, or your note.
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
+                  Keep the receipts that matter.
                 </Text>
-              </View>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  Save photos and screenshots. Find them when you need them.
+                </Text>
 
-              <View style={styles.actionGroup}>
+                {/* Sample Card */}
+                <View
+                  style={[
+                    styles.sampleReceiptCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.sampleCardHeader}>
+                    <Text style={[styles.sampleMerchant, { color: colors.textPrimary }]}>
+                      Mercury Drug
+                    </Text>
+                    <Text style={[styles.sampleAmount, { color: colors.primary }]}>₱ 328.50</Text>
+                  </View>
+                  <Text style={[styles.sampleDate, { color: colors.textSecondary }]}>
+                    Aug 28, 2026 • Medical prescription
+                  </Text>
+                  <View style={styles.sampleTagRow}>
+                    <View
+                      style={[
+                        styles.sampleBadge,
+                        {
+                          backgroundColor: colors.status.success.bg,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.sampleBadgeText, { color: colors.status.success.text }]}>
+                        Saved on this phone
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.sampleBadge,
+                        {
+                          backgroundColor: colors.surfaceAlt,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.sampleBadgeText, { color: colors.primary }]}>
+                        In Box
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.actionGroup}>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleGetStarted}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Get started with Keeptrail"
+                  >
+                    <Text style={[styles.primaryBtnText, { color: colors.primaryFg }]}>
+                      Get started
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryBtn,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={handleSeeExample}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="See an example receipt"
+                  >
+                    <Text style={[styles.secondaryBtnText, { color: colors.textPrimary }]}>
+                      See an example
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* ======================================================= */}
+            {/* SCREEN 2: Local Vault Notice (No Accounts / Honest Privacy) */}
+            {/* ======================================================= */}
+            {step === 2 && (
+              <View style={styles.stepContainer}>
+                <View style={[styles.iconCircle, { backgroundColor: colors.surfaceAlt }]}>
+                  <Text style={styles.iconCircleGlyph}>🛡️</Text>
+                </View>
+
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
+                  Private on this phone.
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  No account required. Your receipts and photos stay in a private vault on this
+                  device.
+                </Text>
+
+                <View
+                  style={[
+                    styles.infoBox,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.infoBoxTitle, { color: colors.textPrimary }]}>
+                    What this means for you
+                  </Text>
+                  <Text style={[styles.infoItem, { color: colors.textSecondary }]}>
+                    •{" "}
+                    <Text style={[styles.infoItemBold, { color: colors.textPrimary }]}>
+                      Zero Cloud Uploads:
+                    </Text>{" "}
+                    We do not operate a receipt backend or upload your photos to remote servers.
+                  </Text>
+                  <Text style={[styles.infoItem, { color: colors.textSecondary }]}>
+                    •{" "}
+                    <Text style={[styles.infoItemBold, { color: colors.textPrimary }]}>
+                      Offline First:
+                    </Text>{" "}
+                    OCR, search, and calculations run entirely on your phone without an internet
+                    connection.
+                  </Text>
+                  <Text style={[styles.infoItem, { color: colors.textSecondary }]}>
+                    •{" "}
+                    <Text style={[styles.infoItemBold, { color: colors.textPrimary }]}>
+                      Encrypted Backup:
+                    </Text>{" "}
+                    Export AES-256 encrypted backups whenever you want to transfer or protect your
+                    records.
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.cautionBox,
+                    {
+                      backgroundColor: colors.status.warning.bg,
+                      borderColor: colors.status.warning.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.cautionText, { color: colors.status.warning.text }]}>
+                    ⚠️ Note: Because there are no accounts, we cannot reset a forgotten backup
+                    password. Keep your backup password safe.
+                  </Text>
+                </View>
+
                 <TouchableOpacity
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleAcceptLocalVault}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.primaryBtnText, { color: colors.primaryFg }]}>
+                    I understand — Continue
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ======================================================= */}
+            {/* SCREEN 3: First Receipt Capture Choice                  */}
+            {/* ======================================================= */}
+            {step === 3 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
+                  Save your first receipt.
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  Choose how you want to add evidence into your private vault.
+                </Text>
+
+                <View style={styles.choiceGroup}>
+                  <TouchableOpacity
+                    style={[
+                      styles.choiceCard,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={() => handleSelectCaptureMode("camera")}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.choiceIcon}>📷</Text>
+                    <View style={styles.choiceTextCol}>
+                      <Text style={[styles.choiceTitle, { color: colors.textPrimary }]}>
+                        Take a photo
+                      </Text>
+                      <Text style={[styles.choiceDesc, { color: colors.textSecondary }]}>
+                        Snap a paper receipt or physical invoice
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.choiceCard,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={() => handleSelectCaptureMode("gallery")}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.choiceIcon}>🖼️</Text>
+                    <View style={styles.choiceTextCol}>
+                      <Text style={[styles.choiceTitle, { color: colors.textPrimary }]}>
+                        Choose a photo
+                      </Text>
+                      <Text style={[styles.choiceDesc, { color: colors.textSecondary }]}>
+                        Import a screenshot or saved receipt image
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.choiceCard,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={() => handleSelectCaptureMode("manual")}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.choiceIcon}>✍️</Text>
+                    <View style={styles.choiceTextCol}>
+                      <Text style={[styles.choiceTitle, { color: colors.textPrimary }]}>
+                        Enter manually
+                      </Text>
+                      <Text style={[styles.choiceDesc, { color: colors.textSecondary }]}>
+                        Record details directly without an image
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryBtn,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   onPress={handleFinish}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.primaryBtnText}>Done</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={() => setStep(3)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.secondaryBtnText}>Add another receipt</Text>
+                  <Text style={[styles.secondaryBtnText, { color: colors.textPrimary }]}>
+                    Maybe later
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
-        </ScrollView>
+            )}
+
+            {/* ======================================================= */}
+            {/* SCREEN 4: Quick Save and Review                         */}
+            {/* ======================================================= */}
+            {step === 4 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
+                  Quick Save & Review
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  Review details. You can save immediately before on-device recognition completes.
+                </Text>
+
+                {/* Form inputs */}
+                <View
+                  style={[
+                    styles.formSection,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                    Merchant / Payee
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.controlBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    value={merchant}
+                    onChangeText={setMerchant}
+                    placeholder="e.g. National Bookstore, Shell"
+                    placeholderTextColor={colors.textMuted}
+                  />
+
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                    Total Amount (₱)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: amountError
+                          ? colors.status.danger.border
+                          : colors.controlBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    value={amountInput}
+                    onChangeText={handleAmountChange}
+                    placeholder="0.00"
+                    keyboardType="numeric"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                  {amountError && (
+                    <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
+                      {amountError}
+                    </Text>
+                  )}
+
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                    What is this for? (Optional)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.controlBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    value={purpose}
+                    onChangeText={setPurpose}
+                    placeholder="e.g. Project supplies, warranty proof"
+                    placeholderTextColor={colors.textMuted}
+                  />
+
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
+                      Default Collection:
+                    </Text>
+                    <View style={[styles.inboxPill, { backgroundColor: colors.surfaceAlt }]}>
+                      <Text style={[styles.inboxPillText, { color: colors.primary }]}>
+                        📥 Inbox
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.actionGroup}>
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: isSaving ? 0.6 : 1,
+                      },
+                    ]}
+                    onPress={handleQuickSave}
+                    disabled={isSaving}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.primaryBtnText, { color: colors.primaryFg }]}>
+                      {isSaving ? "Saving..." : "Save receipt"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryBtn,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={handleFinish}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.secondaryBtnText, { color: colors.textPrimary }]}>
+                      Finish later
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* ======================================================= */}
+            {/* SCREEN 5: First Value (Confirmation & Discovery)       */}
+            {/* ======================================================= */}
+            {step === 5 && (
+              <View style={styles.stepContainer}>
+                <View
+                  style={[
+                    styles.successIconCircle,
+                    {
+                      backgroundColor: colors.status.success.bg,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.successIconGlyph, { color: colors.status.success.text }]}>
+                    ✓
+                  </Text>
+                </View>
+
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
+                  Saved on this phone.
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  Your receipt is securely saved in your local private vault.
+                </Text>
+
+                {/* Tip card */}
+                <View
+                  style={[
+                    styles.tipCard,
+                    {
+                      backgroundColor: colors.surfaceAlt,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.tipTitle, { color: colors.primary }]}>💡 Quick Tip</Text>
+                  <Text style={[styles.tipDesc, { color: colors.textSecondary }]}>
+                    You can find this later by searching for "{merchant || "Bookstore"}", item
+                    keywords, or your note.
+                  </Text>
+                </View>
+
+                <View style={styles.actionGroup}>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleFinish}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.primaryBtnText, { color: colors.primaryFg }]}>Done</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryBtn,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={() => {
+                      haptics.tap();
+                      setStep(3);
+                    }}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.secondaryBtnText, { color: colors.textPrimary }]}>
+                      Add another receipt
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -404,55 +688,48 @@ export function OnboardingModal({ visible, onClose, onOpenSampleReceipt }: Onboa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.brand.background,
   },
   stepHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.brand.border,
   },
   stepProgressContainer: {
     flexDirection: "row",
-    gap: spacing.xs,
+    gap: 6,
   },
   progressDot: {
     width: 24,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.brand.border,
-  },
-  progressDotActive: {
-    backgroundColor: colors.brand.primary,
   },
   skipButton: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    minHeight: 48,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    minHeight: 44,
     justifyContent: "center",
   },
   skipText: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 14,
     fontWeight: "600",
   },
   scrollContent: {
-    padding: spacing.lg,
+    padding: 16,
+    paddingBottom: 40,
   },
   stepContainer: {
-    paddingVertical: spacing.md,
+    paddingVertical: 12,
   },
   brandMarkContainer: {
     alignItems: "center",
-    marginBottom: spacing.lg,
+    marginBottom: 16,
   },
   foldedDocSymbol: {
     width: 64,
     height: 76,
-    backgroundColor: colors.brand.primary,
     borderRadius: 8,
     position: "relative",
     padding: 8,
@@ -464,19 +741,16 @@ const styles = StyleSheet.create({
     right: 0,
     width: 18,
     height: 18,
-    backgroundColor: colors.brand.primaryPressed,
     borderBottomLeftRadius: 4,
   },
   symbolTrailLine1: {
     height: 4,
-    backgroundColor: colors.brand.primaryFg,
     borderRadius: 2,
     marginBottom: 6,
     width: "75%",
   },
   symbolTrailLine2: {
     height: 4,
-    backgroundColor: colors.brand.primaryFg,
     borderRadius: 2,
     marginBottom: 6,
     width: "55%",
@@ -485,106 +759,88 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.brand.primaryFg,
   },
   title: {
-    ...typography.mainTitle,
-    color: colors.brand.textPrimary,
+    fontSize: 26,
+    fontWeight: "800",
     textAlign: "center",
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   subtitle: {
-    ...typography.body,
-    color: colors.brand.textSecondary,
+    fontSize: 15,
     textAlign: "center",
-    marginBottom: spacing.xxl,
+    marginBottom: 24,
     lineHeight: 22,
   },
   sampleReceiptCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    marginBottom: spacing.xxl,
+    marginBottom: 24,
   },
   sampleCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
   sampleMerchant: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
-  },
-  sampleAmount: {
-    ...typography.heading2,
-    color: colors.brand.primary,
+    fontSize: 16,
     fontWeight: "700",
   },
+  sampleAmount: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
   sampleDate: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
-    marginBottom: spacing.md,
+    fontSize: 13,
+    marginBottom: 12,
   },
   sampleTagRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: 8,
   },
   sampleBadge: {
-    backgroundColor: colors.status.success.bg,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: borderRadius.full,
+    borderRadius: 12,
   },
   sampleBadgeText: {
-    ...typography.caption,
-    color: colors.status.success.text,
+    fontSize: 11,
     fontWeight: "600",
   },
-  sampleBadgeAlt: {
-    backgroundColor: colors.brand.surfaceAlt,
-  },
-  sampleBadgeAltText: {
-    color: colors.brand.primary,
-  },
   actionGroup: {
-    gap: spacing.md,
+    gap: 12,
   },
   primaryBtn: {
-    backgroundColor: colors.brand.primary,
-    height: spacing.buttonHeight,
-    borderRadius: borderRadius.control,
+    height: 52,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
   primaryBtnText: {
-    ...typography.bodyBold,
-    color: colors.brand.primaryFg,
+    fontSize: 16,
+    fontWeight: "700",
   },
   secondaryBtn: {
-    height: spacing.buttonHeight,
-    borderRadius: borderRadius.control,
-    borderWidth: 1,
-    borderColor: colors.brand.controlBorder,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: colors.brand.surface,
   },
   secondaryBtnText: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 16,
+    fontWeight: "600",
   },
   iconCircle: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.brand.surfaceAlt,
     alignSelf: "center",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: spacing.lg,
+    marginBottom: 16,
   },
   iconCircleGlyph: {
     fontSize: 28,
@@ -593,145 +849,126 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.status.success.bg,
     alignSelf: "center",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: spacing.lg,
+    marginBottom: 16,
   },
   successIconGlyph: {
     fontSize: 28,
-    color: colors.status.success.text,
     fontWeight: "700",
   },
   infoBox: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    marginBottom: spacing.md,
+    marginBottom: 14,
   },
   infoBoxTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
-    marginBottom: spacing.sm,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 8,
   },
   infoItem: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
-    marginBottom: spacing.sm,
-    lineHeight: 20,
+    fontSize: 13,
+    marginBottom: 8,
+    lineHeight: 18,
   },
   infoItemBold: {
     fontWeight: "700",
-    color: colors.brand.textPrimary,
   },
   cautionBox: {
-    backgroundColor: colors.status.warning.bg,
-    borderRadius: borderRadius.card,
-    padding: spacing.md,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
-    borderColor: colors.status.warning.border,
-    marginBottom: spacing.xxl,
+    marginBottom: 24,
   },
   cautionText: {
-    ...typography.caption,
-    color: colors.status.warning.text,
+    fontSize: 12,
     lineHeight: 18,
   },
   choiceGroup: {
-    gap: spacing.md,
-    marginBottom: spacing.xxl,
+    gap: 12,
+    marginBottom: 24,
   },
   choiceCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.card,
+    padding: 16,
+    borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: colors.brand.border,
     minHeight: 64,
   },
   choiceIcon: {
     fontSize: 28,
-    marginRight: spacing.md,
+    marginRight: 14,
   },
   choiceTextCol: {
     flex: 1,
   },
   choiceTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
   },
   choiceDesc: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
     marginTop: 2,
   },
   formSection: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    marginBottom: spacing.xxl,
+    marginBottom: 24,
   },
   inputLabel: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 12,
     fontWeight: "700",
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
+    marginBottom: 4,
+    marginTop: 10,
   },
   textInput: {
     borderWidth: 1.5,
-    borderColor: colors.brand.controlBorder,
-    borderRadius: borderRadius.control,
-    paddingHorizontal: spacing.md,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     height: 48,
-    ...typography.body,
-    color: colors.brand.textPrimary,
-    backgroundColor: colors.brand.surface,
+    fontSize: 15,
+  },
+  inlineError: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: spacing.md,
-    gap: spacing.sm,
+    marginTop: 12,
+    gap: 8,
   },
   metaLabel: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
   },
   inboxPill: {
-    backgroundColor: colors.brand.surfaceAlt,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: borderRadius.full,
+    borderRadius: 12,
   },
   inboxPillText: {
-    ...typography.caption,
-    color: colors.brand.primary,
+    fontSize: 11,
     fontWeight: "700",
   },
   tipCard: {
-    backgroundColor: colors.status.info.bg,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.status.info.border,
-    marginBottom: spacing.xxl,
+    marginBottom: 24,
   },
   tipTitle: {
-    ...typography.bodyBold,
-    color: colors.status.info.text,
-    marginBottom: spacing.xs,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   tipDesc: {
-    ...typography.supporting,
-    color: colors.status.info.text,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

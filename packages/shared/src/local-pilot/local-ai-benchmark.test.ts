@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { AskKeeptrailEngine } from "./assistant-engine";
 import type { ReceiptRecord, ActionRecord, CollectionRecord } from "./types";
-import { calculateReceiptTotals, formatMoney } from "./deterministic-money";
+import { calculateReceiptTotals } from "./deterministic-money";
 
 describe("Local AI & Evidence Acceptance (Prompt S4)", () => {
   const mockReceipts: ReceiptRecord[] = [

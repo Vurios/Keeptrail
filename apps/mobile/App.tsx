@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { colors, spacing, borderRadius, typography } from "./src/theme/tokens";
 import { VaultProvider } from "./src/vault-context";
+import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
+import { ToastProvider } from "./src/components/ToastContext";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { ReceiptsScreen } from "./src/screens/ReceiptsScreen";
 import { CollectionsScreen } from "./src/screens/CollectionsScreen";
@@ -12,11 +13,13 @@ import { AskKeeptrailScreen } from "./src/screens/AskKeeptrailScreen";
 import { CaptureModal } from "./src/screens/CaptureModal";
 import { OnboardingModal } from "./src/screens/OnboardingModal";
 import { ReceiptRecord } from "@katibay/shared";
+import { haptics } from "./src/utils/haptics";
 
 type MainTab = "home" | "receipts" | "collections" | "reminders";
 type ActiveOverlay = "none" | "storage_backup" | "ask_keeptrail";
 
 function MainApp() {
+  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
   const [currentTab, setCurrentTab] = useState<MainTab>("home");
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>("none");
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
@@ -24,14 +27,22 @@ function MainApp() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
 
   const handleOpenReceiptFromAnywhere = (receipt: ReceiptRecord) => {
+    haptics.tap();
     setSelectedReceipt(receipt);
     setCurrentTab("receipts");
     setActiveOverlay("none");
   };
 
+  const handleTabChange = (tab: MainTab) => {
+    if (tab !== currentTab) {
+      haptics.tap();
+      setCurrentTab(tab);
+    }
+  };
+
   return (
-    <View style={styles.appContainer}>
-      <StatusBar style="dark" />
+    <View style={[styles.appContainer, { backgroundColor: colors.background }]}>
+      <StatusBar style={isDark ? "light" : "dark"} />
 
       {/* Primary Screen Content */}
       <View style={styles.screenContent}>
@@ -47,10 +58,19 @@ function MainApp() {
             {currentTab === "home" && (
               <HomeScreen
                 onOpenReceipt={handleOpenReceiptFromAnywhere}
-                onOpenAskKeeptrail={() => setActiveOverlay("ask_keeptrail")}
-                onOpenStorageBackup={() => setActiveOverlay("storage_backup")}
-                onOpenOnboarding={() => setIsOnboardingOpen(true)}
-                onNavigateToTab={(tab) => setCurrentTab(tab)}
+                onOpenAskKeeptrail={() => {
+                  haptics.tap();
+                  setActiveOverlay("ask_keeptrail");
+                }}
+                onOpenStorageBackup={() => {
+                  haptics.tap();
+                  setActiveOverlay("storage_backup");
+                }}
+                onOpenOnboarding={() => {
+                  haptics.tap();
+                  setIsOnboardingOpen(true);
+                }}
+                onNavigateToTab={(tab) => handleTabChange(tab)}
               />
             )}
             {currentTab === "receipts" && (
@@ -70,61 +90,120 @@ function MainApp() {
       {/* Floating Action Button for Quick Capture */}
       {activeOverlay === "none" && (
         <TouchableOpacity
-          style={styles.floatingCaptureBtn}
-          onPress={() => setIsCaptureModalOpen(true)}
-          activeOpacity={0.85}
+          style={[
+            styles.floatingCaptureBtn,
+            {
+              backgroundColor: colors.primary,
+              shadowColor: isDark ? "#000" : "#146B55",
+            },
+          ]}
+          onPress={() => {
+            haptics.tap();
+            setIsCaptureModalOpen(true);
+          }}
+          activeOpacity={0.82}
+          accessibilityRole="button"
           accessibilityLabel="Capture or Add Receipt"
+          accessibilityHint="Opens options to photograph a receipt, import a screenshot, or enter details manually"
         >
-          <Text style={styles.floatingCaptureIcon}>+</Text>
+          <Text style={[styles.floatingCaptureIcon, { color: colors.primaryFg }]}>+</Text>
         </TouchableOpacity>
       )}
 
       {/* Bottom Navigation Bar */}
       {activeOverlay === "none" && (
-        <SafeAreaView style={styles.bottomNavContainer}>
-          <View style={styles.bottomNav}>
+        <SafeAreaView
+          style={[
+            styles.bottomNavContainer,
+            {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.bottomNav} accessibilityRole="tablist">
             {/* Tab 1: Home */}
             <TouchableOpacity
-              style={[styles.navTab, currentTab === "home" && styles.navTabActive]}
-              onPress={() => setCurrentTab("home")}
+              style={[
+                styles.navTab,
+                currentTab === "home" && [styles.navTabActive, { borderTopColor: colors.primary }],
+              ]}
+              onPress={() => handleTabChange("home")}
+              accessibilityRole="tab"
               accessibilityLabel="Home Tab"
+              accessibilityState={{ selected: currentTab === "home" }}
+              activeOpacity={0.7}
             >
               <Text style={[styles.navIcon, currentTab === "home" && styles.navIconActive]}>
                 🏠
               </Text>
-              <Text style={[styles.navLabel, currentTab === "home" && styles.navLabelActive]}>
+              <Text
+                style={[
+                  styles.navLabel,
+                  { color: currentTab === "home" ? colors.primary : colors.textSecondary },
+                  currentTab === "home" && styles.navLabelActive,
+                ]}
+              >
                 Home
               </Text>
             </TouchableOpacity>
 
             {/* Tab 2: Receipts */}
             <TouchableOpacity
-              style={[styles.navTab, currentTab === "receipts" && styles.navTabActive]}
-              onPress={() => setCurrentTab("receipts")}
+              style={[
+                styles.navTab,
+                currentTab === "receipts" && [
+                  styles.navTabActive,
+                  { borderTopColor: colors.primary },
+                ],
+              ]}
+              onPress={() => handleTabChange("receipts")}
+              accessibilityRole="tab"
               accessibilityLabel="Receipts Tab"
+              accessibilityState={{ selected: currentTab === "receipts" }}
+              activeOpacity={0.7}
             >
               <Text style={[styles.navIcon, currentTab === "receipts" && styles.navIconActive]}>
                 🧾
               </Text>
-              <Text style={[styles.navLabel, currentTab === "receipts" && styles.navLabelActive]}>
+              <Text
+                style={[
+                  styles.navLabel,
+                  { color: currentTab === "receipts" ? colors.primary : colors.textSecondary },
+                  currentTab === "receipts" && styles.navLabelActive,
+                ]}
+              >
                 Receipts
               </Text>
             </TouchableOpacity>
 
             {/* Center Spacer for Floating Button */}
-            <View style={styles.navCenterSpacer} />
+            <View style={styles.navCenterSpacer} pointerEvents="none" />
 
             {/* Tab 3: Collections */}
             <TouchableOpacity
-              style={[styles.navTab, currentTab === "collections" && styles.navTabActive]}
-              onPress={() => setCurrentTab("collections")}
+              style={[
+                styles.navTab,
+                currentTab === "collections" && [
+                  styles.navTabActive,
+                  { borderTopColor: colors.primary },
+                ],
+              ]}
+              onPress={() => handleTabChange("collections")}
+              accessibilityRole="tab"
               accessibilityLabel="Collections Tab"
+              accessibilityState={{ selected: currentTab === "collections" }}
+              activeOpacity={0.7}
             >
               <Text style={[styles.navIcon, currentTab === "collections" && styles.navIconActive]}>
                 📁
               </Text>
               <Text
-                style={[styles.navLabel, currentTab === "collections" && styles.navLabelActive]}
+                style={[
+                  styles.navLabel,
+                  { color: currentTab === "collections" ? colors.primary : colors.textSecondary },
+                  currentTab === "collections" && styles.navLabelActive,
+                ]}
               >
                 Collections
               </Text>
@@ -132,14 +211,29 @@ function MainApp() {
 
             {/* Tab 4: Reminders */}
             <TouchableOpacity
-              style={[styles.navTab, currentTab === "reminders" && styles.navTabActive]}
-              onPress={() => setCurrentTab("reminders")}
+              style={[
+                styles.navTab,
+                currentTab === "reminders" && [
+                  styles.navTabActive,
+                  { borderTopColor: colors.primary },
+                ],
+              ]}
+              onPress={() => handleTabChange("reminders")}
+              accessibilityRole="tab"
               accessibilityLabel="Reminders Tab"
+              accessibilityState={{ selected: currentTab === "reminders" }}
+              activeOpacity={0.7}
             >
               <Text style={[styles.navIcon, currentTab === "reminders" && styles.navIconActive]}>
                 ⏰
               </Text>
-              <Text style={[styles.navLabel, currentTab === "reminders" && styles.navLabelActive]}>
+              <Text
+                style={[
+                  styles.navLabel,
+                  { color: currentTab === "reminders" ? colors.primary : colors.textSecondary },
+                  currentTab === "reminders" && styles.navLabelActive,
+                ]}
+              >
                 Reminders
               </Text>
             </TouchableOpacity>
@@ -165,54 +259,52 @@ function MainApp() {
 
 export default function App() {
   return (
-    <VaultProvider>
-      <MainApp />
-    </VaultProvider>
+    <ThemeProvider>
+      <VaultProvider>
+        <ToastProvider>
+          <MainApp />
+        </ToastProvider>
+      </VaultProvider>
+    </ThemeProvider>
   );
 }
 
 const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
-    backgroundColor: colors.brand.background,
   },
   screenContent: {
     flex: 1,
   },
   floatingCaptureBtn: {
     position: "absolute",
-    bottom: 34,
+    bottom: Platform.OS === "android" ? 28 : 34,
     alignSelf: "center",
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.brand.primary,
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 99,
-    shadowColor: "#000",
+    zIndex: 999,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
   },
   floatingCaptureIcon: {
     fontSize: 32,
-    color: colors.brand.primaryFg,
     lineHeight: 36,
     fontWeight: "600",
   },
   bottomNavContainer: {
-    backgroundColor: colors.brand.surface,
     borderTopWidth: 1,
-    borderTopColor: colors.brand.border,
   },
   bottomNav: {
     flexDirection: "row",
     height: 64,
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 8,
   },
   navCenterSpacer: {
     width: 64,
@@ -221,12 +313,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.xs,
+    paddingVertical: 4,
     height: "100%",
+    minHeight: 48,
   },
   navTabActive: {
-    borderTopWidth: 2,
-    borderTopColor: colors.brand.primary,
+    borderTopWidth: 2.5,
   },
   navIcon: {
     fontSize: 20,
@@ -236,13 +328,11 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   navLabel: {
-    ...typography.caption,
     fontSize: 11,
-    color: colors.brand.textSecondary,
     marginTop: 2,
+    fontWeight: "500",
   },
   navLabelActive: {
-    color: colors.brand.primary,
     fontWeight: "700",
   },
 });

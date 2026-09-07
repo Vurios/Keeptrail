@@ -1,6 +1,6 @@
 /**
  * Keeptrail "Ask Keeptrail" Assistant Engine
- * 
+ *
  * Strict Local Rules:
  * 1. Pretrained model on device (or deterministic Basic Helper on unsupported phones).
  * 2. NO CLAIM of self-training or fine-tuning on users' receipts.
@@ -66,7 +66,7 @@ export class AskKeeptrailEngine {
       prompt.includes("gastos") ||
       prompt.includes("magkano")
     ) {
-      return this.handleSpendSummaryQuery(userPrompt);
+      return this.handleSpendSummaryQuery();
     }
 
     // Route 2: Review queries ("which need review", "unreviewed")
@@ -105,16 +105,19 @@ export class AskKeeptrailEngine {
     return this.handleSearchQuery(userPrompt);
   }
 
-  private handleSpendSummaryQuery(userPrompt: string): AssistantResponse {
+  private handleSpendSummaryQuery(): AssistantResponse {
     const summary = calculateReceiptTotals(this.receipts, { reviewedOnly: false });
     const currencyKeys = Object.keys(summary.currencies);
 
     if (currencyKeys.length === 0) {
       return {
-        answer: "You have no saved receipts with recorded amounts yet. Add receipts or enter amounts manually to see totals.",
+        answer:
+          "You have no saved receipts with recorded amounts yet. Add receipts or enter amounts manually to see totals.",
         source_record_ids: [],
         mode_used: this.isModelAvailable ? "on_device_model" : "basic_helper",
-        model_label: this.isModelAvailable ? this.modelName : "Basic Helper (Deterministic Fallback)",
+        model_label: this.isModelAvailable
+          ? this.modelName
+          : "Basic Helper (Deterministic Fallback)",
       };
     }
 
@@ -135,7 +138,9 @@ export class AskKeeptrailEngine {
     }
 
     if (summary.total_records_unknown_amount > 0) {
-      breakdownNotes.push(`${summary.total_records_unknown_amount} receipt(s) have unknown amounts and were excluded from sum.`);
+      breakdownNotes.push(
+        `${summary.total_records_unknown_amount} receipt(s) have unknown amounts and were excluded from sum.`,
+      );
     }
 
     const answerLines: string[] = [
@@ -160,16 +165,17 @@ export class AskKeeptrailEngine {
   }
 
   private handleReviewQuery(): AssistantResponse {
-    const needsReview = this.receipts.filter(
-      (r) => r.review_status !== "reviewed"
-    );
+    const needsReview = this.receipts.filter((r) => r.review_status !== "reviewed");
 
     if (needsReview.length === 0) {
       return {
-        answer: "All your saved receipts are marked as Reviewed! Great job organizing your records.",
+        answer:
+          "All your saved receipts are marked as Reviewed! Great job organizing your records.",
         source_record_ids: [],
         mode_used: this.isModelAvailable ? "on_device_model" : "basic_helper",
-        model_label: this.isModelAvailable ? this.modelName : "Basic Helper (Deterministic Fallback)",
+        model_label: this.isModelAvailable
+          ? this.modelName
+          : "Basic Helper (Deterministic Fallback)",
       };
     }
 
@@ -177,7 +183,10 @@ export class AskKeeptrailEngine {
     const list = sample
       .map(
         (r) =>
-          `• ${r.merchant || r.title || "Untitled"} (${formatMoney(r.total_minor_units, r.currency)})`
+          `• ${r.merchant || r.title || "Untitled"} (${formatMoney(
+            r.total_minor_units,
+            r.currency,
+          )})`,
       )
       .join("\n");
 
@@ -199,13 +208,13 @@ export class AskKeeptrailEngine {
         answer: "You have no pending deadlines, return reminders, or refund follow-ups.",
         source_record_ids: [],
         mode_used: this.isModelAvailable ? "on_device_model" : "basic_helper",
-        model_label: this.isModelAvailable ? this.modelName : "Basic Helper (Deterministic Fallback)",
+        model_label: this.isModelAvailable
+          ? this.modelName
+          : "Basic Helper (Deterministic Fallback)",
       };
     }
 
-    const list = pending
-      .map((a) => `• ${a.title} (Due: ${a.due_date})`)
-      .join("\n");
+    const list = pending.map((a) => `• ${a.title} (Due: ${a.due_date})`).join("\n");
 
     return {
       answer: `You have ${pending.length} pending reminder(s):\n${list}`,
@@ -245,12 +254,7 @@ export class AskKeeptrailEngine {
       const t = (r.title || "").toLowerCase();
       const n = (r.notes || "").toLowerCase();
       const p = (r.purpose || "").toLowerCase();
-      return (
-        m.includes(query) ||
-        t.includes(query) ||
-        n.includes(query) ||
-        p.includes(query)
-      );
+      return m.includes(query) || t.includes(query) || n.includes(query) || p.includes(query);
     });
 
     if (matches.length === 0) {
@@ -258,7 +262,9 @@ export class AskKeeptrailEngine {
         answer: `No receipts found matching "${userPrompt}". Try searching by merchant name, item, or note.`,
         source_record_ids: [],
         mode_used: this.isModelAvailable ? "on_device_model" : "basic_helper",
-        model_label: this.isModelAvailable ? this.modelName : "Basic Helper (Deterministic Fallback)",
+        model_label: this.isModelAvailable
+          ? this.modelName
+          : "Basic Helper (Deterministic Fallback)",
       };
     }
 
@@ -266,7 +272,10 @@ export class AskKeeptrailEngine {
     const list = sample
       .map(
         (r) =>
-          `• ${r.merchant || r.title} (${r.transaction_date || "No date"}) — ${formatMoney(r.total_minor_units, r.currency)}`
+          `• ${r.merchant || r.title} (${r.transaction_date || "No date"}) — ${formatMoney(
+            r.total_minor_units,
+            r.currency,
+          )}`,
       )
       .join("\n");
 

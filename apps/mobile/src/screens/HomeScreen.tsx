@@ -7,10 +7,15 @@ import {
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
+  RefreshControl,
+  Platform,
+  StatusBar,
 } from "react-native";
-import { colors, spacing, borderRadius, typography } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
+import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
 import { formatMoney, calculateReceiptTotals, ReceiptRecord } from "@katibay/shared";
+import { haptics } from "../utils/haptics";
 
 interface HomeScreenProps {
   onOpenReceipt: (receipt: ReceiptRecord) => void;
@@ -27,8 +32,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenOnboarding,
   onNavigateToTab,
 }) => {
-  const { receipts, stats } = useLocalVault();
+  const { colors, spacing, borderRadius, typography, isDark, toggleTheme } = useTheme();
+  const { receipts, stats, refreshState } = useLocalVault();
+  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    refreshState();
+    haptics.tap();
+    setTimeout(() => {
+      setIsRefreshing(false);
+      showToast({
+        type: "success",
+        title: "Vault Refreshed",
+        message: `${stats.receiptCount} receipts loaded from local SQLite database.`,
+        duration: 2000,
+      });
+    }, 400);
+  };
 
   const filteredReceipts = searchQuery.trim()
     ? receipts.filter((r) => {
@@ -43,157 +66,358 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     : receipts;
 
   const totals = calculateReceiptTotals(receipts);
-  const primaryCurrency = Object.keys(totals.currencies)[0] || "PHP";
+  const currencyKeys = Object.keys(totals.currencies);
+  const primaryCurrency = currencyKeys[0] || "PHP";
   const primaryTotalFormatted = totals.currencies[primaryCurrency]?.formatted || "₱0.00";
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* Brand Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.brandTitle}>KEEPTRAIL</Text>
-            <Text style={styles.brandTagline}>Save it. Find it. Use it.</Text>
+            <Text style={[styles.brandTitle, { color: colors.primary }]}>KEEPTRAIL</Text>
+            <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
+              Save it. Find it. Use it.
+            </Text>
           </View>
           <View style={styles.headerRightActions}>
+            {/* Dark / Light Mode Toggle */}
+            <TouchableOpacity
+              style={[
+                styles.iconActionBtn,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => {
+                haptics.tap();
+                toggleTheme();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${isDark ? "light" : "dark"} mode`}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.iconActionText}>{isDark ? "☀️" : "🌙"}</Text>
+            </TouchableOpacity>
+
             {onOpenOnboarding && (
               <TouchableOpacity
-                style={styles.guideBadge}
-                onPress={onOpenOnboarding}
+                style={[
+                  styles.guideBadge,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => {
+                  haptics.tap();
+                  onOpenOnboarding();
+                }}
+                accessibilityRole="button"
                 accessibilityLabel="Onboarding Guide"
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
                 <Text style={styles.storageBadgeIcon}>📖</Text>
-                <Text style={styles.storageBadgeText}>Guide</Text>
+                <Text style={[styles.guideBadgeText, { color: colors.textPrimary }]}>Guide</Text>
               </TouchableOpacity>
             )}
+
             <TouchableOpacity
-              style={styles.storageBadge}
-              onPress={onOpenStorageBackup}
+              style={[
+                styles.storageBadge,
+                {
+                  backgroundColor: colors.surfaceAlt,
+                  borderColor: colors.status.success.border,
+                },
+              ]}
+              onPress={() => {
+                haptics.tap();
+                onOpenStorageBackup();
+              }}
+              accessibilityRole="button"
               accessibilityLabel="Storage and Backup Settings"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <Text style={styles.storageBadgeIcon}>🔒</Text>
-              <Text style={styles.storageBadgeText}>Vault</Text>
+              <Text style={[styles.storageBadgeText, { color: colors.primary }]}>Vault</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Local Security Status Banner */}
-        <View style={styles.securityBanner}>
-          <View style={styles.securityDot} />
-          <Text style={styles.securityText}>Saved on this phone • 100% private local storage</Text>
+        <View
+          style={[
+            styles.securityBanner,
+            {
+              backgroundColor: colors.status.success.bg,
+              borderColor: colors.status.success.border,
+            },
+          ]}
+        >
+          <View style={[styles.securityDot, { backgroundColor: colors.status.success.text }]} />
+          <Text style={[styles.securityText, { color: colors.status.success.text }]}>
+            Saved on this phone • 100% private local storage
+          </Text>
         </View>
 
-        {/* Search Input */}
-        <View style={styles.searchContainer}>
+        {/* Search Input with Clear Button */}
+        <View
+          style={[
+            styles.searchContainer,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="Search merchant, item, or note..."
-            placeholderTextColor={colors.brand.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            clearButtonMode="while-editing"
+            accessibilityRole="search"
+            accessibilityLabel="Search receipts"
+            returnKeyType="search"
           />
+          {searchQuery.trim().length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery("")}
+              style={styles.clearSearchBtn}
+              accessibilityLabel="Clear search text"
+              accessibilityRole="button"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={[styles.clearSearchText, { color: colors.textMuted }]}>✕</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Ask Keeptrail Quick Access Banner */}
-        <TouchableOpacity style={styles.askBanner} onPress={onOpenAskKeeptrail} activeOpacity={0.8}>
-          <View style={styles.askIconCircle}>
+        <TouchableOpacity
+          style={[
+            styles.askBanner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={() => {
+            haptics.tap();
+            onOpenAskKeeptrail();
+          }}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Ask Keeptrail Assistant"
+        >
+          <View style={[styles.askIconCircle, { backgroundColor: colors.surfaceAlt }]}>
             <Text style={styles.askIcon}>✨</Text>
           </View>
           <View style={styles.askTextCol}>
-            <Text style={styles.askTitle}>Ask Keeptrail</Text>
-            <Text style={styles.askSubtitle}>
+            <Text style={[styles.askTitle, { color: colors.textPrimary }]}>Ask Keeptrail</Text>
+            <Text style={[styles.askSubtitle, { color: colors.textSecondary }]}>
               Ask about spend, items, or return deadlines (on-device)
             </Text>
           </View>
-          <Text style={styles.askChevron}>›</Text>
+          <Text style={[styles.askChevron, { color: colors.textMuted }]}>›</Text>
         </TouchableOpacity>
 
-        {/* Summary Card */}
-        <View style={styles.summaryCard}>
+        {/* Summary Spending Card */}
+        <View
+          style={[
+            styles.summaryCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <View style={styles.summaryRow}>
             <View>
-              <Text style={styles.summaryLabel}>Total Tracked Spending</Text>
-              <Text style={styles.summaryValue}>{primaryTotalFormatted}</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                Total Tracked Spending
+              </Text>
+              <Text style={[styles.summaryValue, { color: colors.primary }]}>
+                {primaryTotalFormatted}
+              </Text>
+              {currencyKeys.length > 1 && (
+                <Text style={[styles.multiCurrencyNotice, { color: colors.textMuted }]}>
+                  +{currencyKeys.length - 1} other currency kept separate
+                </Text>
+              )}
             </View>
             <View style={styles.summaryRightCol}>
-              <Text style={styles.summaryCountLabel}>Receipts</Text>
-              <Text style={styles.summaryCountValue}>{stats.receiptCount}</Text>
+              <Text style={[styles.summaryCountLabel, { color: colors.textSecondary }]}>
+                Receipts
+              </Text>
+              <Text style={[styles.summaryCountValue, { color: colors.textPrimary }]}>
+                {stats.receiptCount}
+              </Text>
             </View>
           </View>
 
           {stats.unreviewedCount > 0 && (
             <TouchableOpacity
-              style={styles.unreviewedAlert}
-              onPress={() => onNavigateToTab("receipts")}
+              style={[
+                styles.unreviewedAlert,
+                {
+                  backgroundColor: colors.status.warning.bg,
+                  borderColor: colors.status.warning.border,
+                },
+              ]}
+              onPress={() => {
+                haptics.tap();
+                onNavigateToTab("receipts");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`${stats.unreviewedCount} receipts need review. Tap to review.`}
             >
               <Text style={styles.unreviewedAlertIcon}>⚠️</Text>
-              <Text style={styles.unreviewedAlertText}>
+              <Text style={[styles.unreviewedAlertText, { color: colors.status.warning.text }]}>
                 {stats.unreviewedCount} receipt(s) need review
               </Text>
-              <Text style={styles.unreviewedAlertAction}>Review ›</Text>
+              <Text style={[styles.unreviewedAlertAction, { color: colors.status.warning.text }]}>
+                Review ›
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
         {/* Recent Receipts Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
             {searchQuery.trim() ? "Search Results" : "Recent Receipts"}
           </Text>
-          <TouchableOpacity onPress={() => onNavigateToTab("receipts")}>
-            <Text style={styles.seeAllText}>See all ({receipts.length})</Text>
+          <TouchableOpacity
+            onPress={() => {
+              haptics.tap();
+              onNavigateToTab("receipts");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="See all receipts"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>
+              See all ({receipts.length})
+            </Text>
           </TouchableOpacity>
         </View>
 
         {filteredReceipts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📄</Text>
-            <Text style={styles.emptyText}>No receipts found.</Text>
-            <Text style={styles.emptySubtext}>
-              Tap the Capture button below to save your first receipt.
+          <View
+            style={[
+              styles.emptyContainer,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={styles.emptyIcon}>📂</Text>
+            <Text style={[styles.emptyText, { color: colors.textPrimary }]}>
+              {searchQuery.trim() ? "No matching receipts" : "No receipts saved yet"}
             </Text>
+            <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+              {searchQuery.trim()
+                ? `No receipts found matching "${searchQuery}". Try a different keyword.`
+                : "Tap the Capture (+) button below to photograph or add your first receipt."}
+            </Text>
+            {searchQuery.trim() && (
+              <TouchableOpacity
+                style={[
+                  styles.clearFilterBtn,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setSearchQuery("")}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.clearFilterBtnText, { color: colors.primary }]}>
+                  Clear Search Filter
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           filteredReceipts.slice(0, 6).map((receipt) => (
             <TouchableOpacity
               key={receipt.id}
-              style={styles.receiptCard}
-              onPress={() => onOpenReceipt(receipt)}
+              style={[
+                styles.receiptCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => {
+                haptics.tap();
+                onOpenReceipt(receipt);
+              }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Receipt from ${
+                receipt.merchant || receipt.title
+              }, amount ${formatMoney(receipt.total_minor_units, receipt.currency)}`}
             >
               <View style={styles.receiptTopRow}>
-                <Text style={styles.receiptMerchant} numberOfLines={1}>
+                <Text
+                  style={[styles.receiptMerchant, { color: colors.textPrimary }]}
+                  numberOfLines={1}
+                >
                   {receipt.merchant || receipt.title}
                 </Text>
-                <Text style={styles.receiptAmount}>
+                <Text style={[styles.receiptAmount, { color: colors.primary }]}>
                   {formatMoney(receipt.total_minor_units, receipt.currency)}
                 </Text>
               </View>
 
               <View style={styles.receiptBottomRow}>
-                <Text style={styles.receiptDate}>{receipt.transaction_date || "No date"}</Text>
+                <Text style={[styles.receiptDate, { color: colors.textSecondary }]}>
+                  {receipt.transaction_date || "No date"}
+                </Text>
 
                 <View style={styles.chipsRow}>
                   <View
                     style={[
                       styles.statusChip,
-                      receipt.review_status === "reviewed"
-                        ? styles.chipReviewed
-                        : styles.chipUnreviewed,
+                      {
+                        backgroundColor:
+                          receipt.review_status === "reviewed"
+                            ? colors.status.success.bg
+                            : colors.status.warning.bg,
+                        borderColor:
+                          receipt.review_status === "reviewed"
+                            ? colors.status.success.border
+                            : colors.status.warning.border,
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         styles.statusChipText,
-                        receipt.review_status === "reviewed"
-                          ? styles.chipReviewedText
-                          : styles.chipUnreviewedText,
+                        {
+                          color:
+                            receipt.review_status === "reviewed"
+                              ? colors.status.success.text
+                              : colors.status.warning.text,
+                        },
                       ]}
                     >
                       {receipt.review_status === "reviewed" ? "Reviewed" : "Needs Review"}
@@ -212,153 +436,166 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.brand.background,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   container: {
     flex: 1,
   },
   contentContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl * 2,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 110,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   brandTitle: {
-    ...typography.sectionTitle,
-    color: colors.brand.primary,
+    fontSize: 22,
+    fontWeight: "800",
     letterSpacing: 1.5,
   },
   brandTagline: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 12,
+    fontWeight: "500",
     marginTop: 2,
   },
   headerRightActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 8,
+  },
+  iconActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconActionText: {
+    fontSize: 16,
   },
   guideBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.surface,
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: borderRadius.full,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.brand.border,
+    minHeight: 36,
+  },
+  guideBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   storageBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.surfaceAlt,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: borderRadius.full,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.status.success.border,
+    minHeight: 36,
   },
   storageBadgeIcon: {
-    fontSize: 12,
+    fontSize: 13,
     marginRight: 4,
   },
   storageBadgeText: {
-    ...typography.caption,
+    fontSize: 12,
     fontWeight: "700",
-    color: colors.brand.primary,
   },
   securityBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.status.success.bg,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
   },
   securityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.brand.primary,
-    marginRight: spacing.sm,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginRight: 8,
   },
   securityText: {
-    ...typography.caption,
-    color: colors.status.success.text,
+    fontSize: 12,
     fontWeight: "600",
+    flex: 1,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.surface,
-    borderWidth: 1,
-    borderColor: colors.brand.border,
-    borderRadius: borderRadius.control,
-    paddingHorizontal: spacing.md,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     height: 48,
-    marginBottom: spacing.md,
+    marginBottom: 12,
   },
   searchIcon: {
     fontSize: 16,
-    marginRight: spacing.sm,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    ...typography.body,
-    color: colors.brand.textPrimary,
+    fontSize: 15,
+    height: "100%",
+  },
+  clearSearchBtn: {
+    padding: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  clearSearchText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
   askBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.surface,
-    borderWidth: 1,
-    borderColor: colors.brand.primary,
-    borderRadius: borderRadius.card,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginBottom: 14,
   },
   askIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.brand.surfaceAlt,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: spacing.md,
+    marginRight: 12,
   },
   askIcon: {
-    fontSize: 18,
+    fontSize: 20,
   },
   askTextCol: {
     flex: 1,
   },
   askTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
   },
   askSubtitle: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 12,
     marginTop: 2,
+    lineHeight: 16,
   },
   askChevron: {
-    fontSize: 20,
-    color: colors.brand.textMuted,
-    marginLeft: spacing.sm,
+    fontSize: 22,
+    fontWeight: "600",
+    marginLeft: 6,
   },
   summaryCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.card,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.brand.border,
-    marginBottom: spacing.xl,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    marginBottom: 18,
   },
   summaryRow: {
     flexDirection: "row",
@@ -366,108 +603,122 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   summaryLabel: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    fontSize: 13,
+    fontWeight: "500",
   },
   summaryValue: {
-    ...typography.mainTitle,
-    color: colors.brand.primary,
-    marginTop: 4,
+    fontSize: 26,
+    fontWeight: "800",
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
+  },
+  multiCurrencyNotice: {
+    fontSize: 11,
+    marginTop: 2,
   },
   summaryRightCol: {
     alignItems: "flex-end",
   },
   summaryCountLabel: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   summaryCountValue: {
-    ...typography.sectionTitle,
-    color: colors.brand.textPrimary,
+    fontSize: 24,
+    fontWeight: "800",
     marginTop: 2,
+    fontVariant: ["tabular-nums"],
   },
   unreviewedAlert: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.status.warning.bg,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    marginTop: spacing.md,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 12,
   },
   unreviewedAlertIcon: {
-    fontSize: 14,
-    marginRight: spacing.xs,
+    fontSize: 16,
+    marginRight: 8,
   },
   unreviewedAlertText: {
-    ...typography.caption,
-    color: colors.status.warning.text,
+    fontSize: 13,
     fontWeight: "600",
     flex: 1,
   },
   unreviewedAlertAction: {
-    ...typography.caption,
-    color: colors.status.warning.text,
+    fontSize: 13,
     fontWeight: "700",
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.md,
+    marginBottom: 10,
+    marginTop: 4,
   },
   sectionTitle: {
-    ...typography.heading2,
-    color: colors.brand.textPrimary,
+    fontSize: 17,
+    fontWeight: "700",
   },
   seeAllText: {
-    ...typography.supporting,
-    color: colors.brand.primary,
+    fontSize: 13,
     fontWeight: "600",
   },
   emptyContainer: {
     alignItems: "center",
-    paddingVertical: spacing.xxl,
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 8,
   },
   emptyIcon: {
-    fontSize: 40,
-    marginBottom: spacing.sm,
+    fontSize: 36,
+    marginBottom: 8,
   },
   emptyText: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
   },
   emptySubtext: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
     textAlign: "center",
     marginTop: 4,
+    lineHeight: 18,
+  },
+  clearFilterBtn: {
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  clearFilterBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   receiptCard: {
-    backgroundColor: colors.brand.surface,
-    borderRadius: borderRadius.control,
-    padding: spacing.md,
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
-    borderColor: colors.brand.border,
-    marginBottom: spacing.sm,
+    marginBottom: 10,
   },
   receiptTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   receiptMerchant: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 15,
+    fontWeight: "600",
     flex: 1,
-    marginRight: spacing.md,
+    marginRight: 10,
   },
   receiptAmount: {
-    ...typography.bodyBold,
-    color: colors.brand.primary,
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
   },
   receiptBottomRow: {
     flexDirection: "row",
@@ -475,34 +726,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   receiptDate: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
+    fontSize: 13,
   },
   chipsRow: {
     flexDirection: "row",
   },
   statusChip: {
-    paddingVertical: 2,
     paddingHorizontal: 8,
-    borderRadius: borderRadius.full,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   statusChipText: {
-    ...typography.caption,
-  },
-  chipReviewed: {
-    backgroundColor: colors.status.success.bg,
-  },
-  chipReviewedText: {
-    ...typography.caption,
-    color: colors.status.success.text,
-    fontWeight: "600",
-  },
-  chipUnreviewed: {
-    backgroundColor: colors.status.warning.bg,
-  },
-  chipUnreviewedText: {
-    ...typography.caption,
-    color: colors.status.warning.text,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

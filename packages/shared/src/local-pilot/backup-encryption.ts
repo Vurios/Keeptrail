@@ -1,11 +1,11 @@
 /**
  * Keeptrail Encrypted Backup & Restore Engine
- * 
+ *
  * Container Format: .keeptrail (version: keeptrail.v1)
  * Cryptography:
  * - PBKDF2 (SHA-256, 100,000 iterations) with 16-byte random salt
  * - AES-256-GCM authenticated encryption with 12-byte random IV (nonce) and 16-byte auth tag
- * 
+ *
  * Payload Structure:
  * [MAGIC 8 bytes "KEEPTRAIL"]
  * [VERSION 2 bytes (0x00, 0x01)]
@@ -15,13 +15,7 @@
  * [ENCRYPTED_CIPHERTEXT (JSON stringified container of manifest, records, and base64 files)]
  */
 
-import {
-  randomBytes,
-  pbkdf2Sync,
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-} from "crypto";
+import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv, createHash } from "crypto";
 import { Buffer } from "buffer";
 import type {
   BackupArchiveContent,
@@ -60,10 +54,7 @@ export function computeSha256(data: Uint8Array): string {
 /**
  * Package and encrypt receipt vault into a .keeptrail binary buffer
  */
-export function createEncryptedBackup(
-  data: EncryptBackupOptions,
-  password: string
-): Uint8Array {
+export function createEncryptedBackup(data: EncryptBackupOptions, password: string): Uint8Array {
   if (!password || password.length < 4) {
     throw new Error("Backup password must be at least 4 characters.");
   }
@@ -117,13 +108,7 @@ export function createEncryptedBackup(
 
   // 2. Key Derivation & AES-256-GCM Encryption
   const salt = randomBytes(SALT_LENGTH_BYTES);
-  const key = pbkdf2Sync(
-    password,
-    salt,
-    PBKDF2_ITERATIONS,
-    KEY_LENGTH_BYTES,
-    "sha256"
-  );
+  const key = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH_BYTES, "sha256");
   const iv = randomBytes(IV_LENGTH_BYTES);
 
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -134,14 +119,7 @@ export function createEncryptedBackup(
   const magicBuffer = Buffer.from(MAGIC_HEADER, "ascii");
   const versionBuffer = Buffer.from([FORMAT_VERSION_MAJOR, FORMAT_VERSION_MINOR]);
 
-  const outputBuffer = Buffer.concat([
-    magicBuffer,
-    versionBuffer,
-    salt,
-    iv,
-    authTag,
-    ciphertext,
-  ]);
+  const outputBuffer = Buffer.concat([magicBuffer, versionBuffer, salt, iv, authTag, ciphertext]);
 
   return new Uint8Array(outputBuffer);
 }
@@ -151,7 +129,7 @@ export function createEncryptedBackup(
  */
 export function restoreEncryptedBackup(
   archiveBuffer: Uint8Array,
-  password: string
+  password: string,
 ): BackupArchiveContent {
   const buf = Buffer.from(archiveBuffer);
 
@@ -172,7 +150,7 @@ export function restoreEncryptedBackup(
 
   if (majorVersion !== FORMAT_VERSION_MAJOR) {
     throw new Error(
-      `Unsupported backup archive version v${majorVersion}.${minorVersion}. Current app supports v${FORMAT_VERSION_MAJOR}.x.`
+      `Unsupported backup archive version v${majorVersion}.${minorVersion}. Current app supports v${FORMAT_VERSION_MAJOR}.x.`,
     );
   }
 
@@ -188,26 +166,15 @@ export function restoreEncryptedBackup(
   const ciphertext = buf.subarray(offset);
 
   // 2. Key Derivation & AES-GCM Decryption
-  const key = pbkdf2Sync(
-    password,
-    salt,
-    PBKDF2_ITERATIONS,
-    KEY_LENGTH_BYTES,
-    "sha256"
-  );
+  const key = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH_BYTES, "sha256");
 
   let plaintextBuffer: Buffer;
   try {
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(authTag);
-    plaintextBuffer = Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]);
-  } catch (err: unknown) {
-    throw new Error(
-      "Decryption failed: Incorrect password or corrupted backup file."
-    );
+    plaintextBuffer = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  } catch {
+    throw new Error("Decryption failed: Incorrect password or corrupted backup file.");
   }
 
   // 3. Parse and Validate Decrypted JSON Content
@@ -222,7 +189,7 @@ export function restoreEncryptedBackup(
 
   try {
     payload = JSON.parse(plaintextBuffer.toString("utf8"));
-  } catch (err) {
+  } catch {
     throw new Error("Corrupted backup payload: Malformed JSON data.");
   }
 
@@ -237,7 +204,7 @@ export function restoreEncryptedBackup(
     const b64 = payload.files[meta.relative_path];
     if (!b64) {
       throw new Error(
-        `Backup archive is incomplete: Missing attachment file "${meta.relative_path}".`
+        `Backup archive is incomplete: Missing attachment file "${meta.relative_path}".`,
       );
     }
 
@@ -246,7 +213,7 @@ export function restoreEncryptedBackup(
 
     if (actualHash !== meta.sha256_hash) {
       throw new Error(
-        `Integrity check failed: Attachment "${meta.relative_path}" checksum does not match manifest.`
+        `Integrity check failed: Attachment "${meta.relative_path}" checksum does not match manifest.`,
       );
     }
 

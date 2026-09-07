@@ -8,9 +8,12 @@ import {
   ScrollView,
   SafeAreaView,
   Modal,
-  Alert,
+  Platform,
+  StatusBar,
+  KeyboardAvoidingView,
 } from "react-native";
-import { colors, spacing, borderRadius, typography } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
+import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
 import {
   extractReceiptFromText,
@@ -18,20 +21,21 @@ import {
   computeSha256,
   DocumentType,
 } from "@katibay/shared";
+import { Skeleton } from "../components/Skeleton";
+import { haptics } from "../utils/haptics";
 
 interface CaptureModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export const CaptureModal: React.FC<CaptureModalProps> = ({
-  visible,
-  onClose,
-}) => {
+export const CaptureModal: React.FC<CaptureModalProps> = ({ visible, onClose }) => {
+  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
   const { vault, saveReceipt, refreshState } = useLocalVault();
+  const { showToast } = useToast();
 
-  // Capture step: 'pick_method' | 'review_form'
-  const [step, setStep] = useState<"pick_method" | "review_form">("pick_method");
+  // Capture step: 'pick_method' | 'processing' | 'review_form'
+  const [step, setStep] = useState<"pick_method" | "processing" | "review_form">("pick_method");
 
   // Captured form fields
   const [merchant, setMerchant] = useState("");
@@ -43,6 +47,8 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
   const [notes, setNotes] = useState("");
   const [sourceSnippet, setSourceSnippet] = useState("");
   const [attachedBytes, setAttachedBytes] = useState<Uint8Array | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const resetForm = () => {
     setStep("pick_method");
@@ -55,68 +61,79 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
     setNotes("");
     setSourceSnippet("");
     setAttachedBytes(null);
+    setAmountError(null);
+    setIsSaving(false);
   };
 
-  const handleCaptureSample = (scenario: "sample_food" | "sample_screenshot" | "manual") => {
+  const handleAmountChange = (text: string) => {
+    setAmount(text);
+    if (!text.trim()) {
+      setAmountError(null);
+      return;
+    }
+    const clean = text.replace(/,/g, "").trim();
+    if (isNaN(Number(clean)) || Number(clean) < 0) {
+      setAmountError("Please enter a valid amount (e.g. 150.00)");
+    } else {
+      setAmountError(null);
+    }
+  };
+
+  const handleCaptureScenario = (scenario: "sample_food" | "sample_screenshot" | "manual") => {
+    haptics.tap();
+
     if (scenario === "manual") {
-      setStep("review_form");
       setDate(new Date().toISOString().split("T")[0]);
       setSourceSnippet("Manual entry without image attachment.");
+      setStep("review_form");
       return;
     }
 
-    let mockOcrText = "";
-    let mockFileName = "";
+    setStep("processing");
 
-    if (scenario === "sample_food") {
-      mockFileName = "receipt_cafe.jpg";
-      mockOcrText = `
-        HIGHLAND COFFEE ROASTERS
-        SM MEGAMALL MANDALUYONG
-        DATE: 2026-09-06
-        1 ICED AMERICANO           150.00
-        1 CROISSANT                120.00
-        SUBTOTAL                   270.00
-        VAT 12%                     32.40
-        TOTAL AMOUNT DUE         ₱ 302.40
-        THANK YOU!
-      `;
-    } else {
-      mockFileName = "gcash_transfer.png";
-      mockOcrText = `
-        GCash
-        Transfer Successful
-        Sent to: Juan Dela Cruz
-        09181234567
-        Date: 2026-09-06
-        Amount: PHP 1,500.00
-      `;
-    }
+    setTimeout(() => {
+      let mockOcrText = "";
 
-    // Run on-device OCR extraction
-    const extracted = extractReceiptFromText(mockOcrText);
+      if (scenario === "sample_food") {
+        mockOcrText = `HIGHLAND COFFEE ROASTERS\nSM MEGAMALL MANDALUYONG\nDATE: 2026-09-06\n1 ICED AMERICANO           150.00\n1 CROISSANT                120.00\nSUBTOTAL                   270.00\nVAT 12%                     32.40\nTOTAL AMOUNT DUE         ₱ 302.40\nTHANK YOU!`;
+      } else {
+        mockOcrText = `GCash\nTransfer Successful\nSent to: Juan Dela Cruz\n09181234567\nDate: 2026-09-06\nAmount: PHP 1,500.00`;
+      }
 
-    const mockBytes = new TextEncoder().encode(mockOcrText);
-    setAttachedBytes(mockBytes);
-    setSourceSnippet(mockOcrText.trim());
+      // Run on-device OCR extraction
+      const extracted = extractReceiptFromText(mockOcrText);
+      const mockBytes = new TextEncoder().encode(mockOcrText);
 
-    setMerchant(extracted.merchant || "");
-    setDate(extracted.transaction_date || new Date().toISOString().split("T")[0]);
-    setCurrency(extracted.currency || "PHP");
-    setAmount(
-      extracted.total_minor_units !== null
-        ? (extracted.total_minor_units / 100).toFixed(2)
-        : ""
-    );
-    setDocType(extracted.document_type);
-    setStep("review_form");
+      setAttachedBytes(mockBytes);
+      setSourceSnippet(mockOcrText.trim());
+      setMerchant(extracted.merchant || "");
+      setDate(extracted.transaction_date || new Date().toISOString().split("T")[0]);
+      setCurrency(extracted.currency || "PHP");
+      setAmount(
+        extracted.total_minor_units !== null ? (extracted.total_minor_units / 100).toFixed(2) : "",
+      );
+      setDocType(extracted.document_type);
+      setStep("review_form");
+      haptics.success();
+    }, 450);
   };
 
   const handleQuickSave = () => {
+    if (isSaving) return;
+
+    if (amountError) {
+      haptics.error();
+      showToast({
+        type: "error",
+        title: "Invalid Amount",
+        message: "Please enter a valid amount before saving.",
+      });
+      return;
+    }
+
+    setIsSaving(true);
     const recId = `rec_${Date.now()}`;
-    const parsedMinorUnits = amount.trim()
-      ? parseMoneyToMinorUnits(amount, currency)
-      : null;
+    const parsedMinorUnits = amount.trim() ? parseMoneyToMinorUnits(amount, currency) : null;
 
     // 1. Save canonical receipt record in local vault
     saveReceipt({
@@ -154,14 +171,23 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
           ocr_text: sourceSnippet,
           created_at: new Date().toISOString(),
         },
-        attachedBytes
+        attachedBytes,
       );
     }
 
     refreshState();
+    haptics.success();
+    showToast({
+      type: "success",
+      title: "Saved on this Phone",
+      message: `Receipt from "${
+        merchant.trim() || "unnamed merchant"
+      }" stored securely in your private vault.`,
+      duration: 3500,
+    });
+
     resetForm();
     onClose();
-    Alert.alert("Saved on this Phone", "Receipt stored securely in your private local vault.");
   };
 
   return (
@@ -174,155 +200,318 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
         onClose();
       }}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => {
-              resetForm();
-              onClose();
-            }}
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.surface }]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View
+            style={[
+              styles.header,
+              {
+                backgroundColor: colors.surface,
+                borderBottomColor: colors.border,
+              },
+            ]}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {step === "pick_method" ? "Add Receipt" : "Review & Quick Save"}
-          </Text>
-          {step === "review_form" ? (
-            <TouchableOpacity onPress={handleQuickSave} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Save</Text>
+            <TouchableOpacity
+              onPress={() => {
+                haptics.tap();
+                resetForm();
+                onClose();
+              }}
+              style={styles.headerBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel receipt capture"
+            >
+              <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={{ width: 44 }} />
-          )}
-        </View>
 
-        {step === "pick_method" ? (
-          <View style={styles.pickMethodContainer}>
-            <Text style={styles.pickMethodTitle}>
-              How would you like to save this record?
-            </Text>
-            <Text style={styles.pickMethodSubtitle}>
-              All captures remain 100% on your device.
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+              {step === "pick_method"
+                ? "Add Receipt"
+                : step === "processing"
+                  ? "Scanning..."
+                  : "Review & Quick Save"}
             </Text>
 
-            <TouchableOpacity
-              style={styles.methodCard}
-              onPress={() => handleCaptureSample("sample_food")}
-            >
-              <Text style={styles.methodIcon}>📷</Text>
-              <View style={styles.methodCol}>
-                <Text style={styles.methodTitle}>Camera / Receipt Photo</Text>
-                <Text style={styles.methodDesc}>
-                  Capture paper receipt and run on-device OCR
+            {step === "review_form" ? (
+              <TouchableOpacity
+                onPress={handleQuickSave}
+                style={[
+                  styles.saveBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: isSaving ? 0.6 : 1,
+                  },
+                ]}
+                disabled={isSaving}
+                accessibilityRole="button"
+                accessibilityLabel="Save receipt to local vault"
+              >
+                <Text style={[styles.saveBtnText, { color: colors.primaryFg }]}>
+                  {isSaving ? "Saving..." : "Save"}
                 </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.methodCard}
-              onPress={() => handleCaptureSample("sample_screenshot")}
-            >
-              <Text style={styles.methodIcon}>📱</Text>
-              <View style={styles.methodCol}>
-                <Text style={styles.methodTitle}>Payment Screenshot</Text>
-                <Text style={styles.methodDesc}>
-                  Import GCash, Maya, or bank transfer confirmation
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.methodCard}
-              onPress={() => handleCaptureSample("manual")}
-            >
-              <Text style={styles.methodIcon}>✍️</Text>
-              <View style={styles.methodCol}>
-                <Text style={styles.methodTitle}>Enter Manually</Text>
-                <Text style={styles.methodDesc}>
-                  Quick record without a photo or document
-                </Text>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 54 }} />
+            )}
           </View>
-        ) : (
-          <ScrollView
-            style={styles.formContainer}
-            contentContainerStyle={styles.formContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Source Evidence Card */}
-            <View style={styles.sourceCard}>
-              <Text style={styles.sourceLabel}>ON-DEVICE EXTRACTION EVIDENCE</Text>
-              <Text style={styles.sourceSnippet} numberOfLines={4}>
-                {sourceSnippet}
+
+          {step === "pick_method" ? (
+            <ScrollView
+              contentContainerStyle={styles.pickMethodContainer}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={[styles.pickMethodTitle, { color: colors.textPrimary }]}>
+                How would you like to save this record?
               </Text>
-            </View>
+              <Text style={[styles.pickMethodSubtitle, { color: colors.textSecondary }]}>
+                All images and text are analyzed on-device with zero cloud exposure.
+              </Text>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Merchant / Payee</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Highland Coffee"
-                value={merchant}
-                onChangeText={setMerchant}
-              />
-            </View>
+              <TouchableOpacity
+                style={[
+                  styles.methodCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => handleCaptureScenario("sample_food")}
+                accessibilityRole="button"
+                accessibilityLabel="Take a photo of paper receipt"
+              >
+                <Text style={styles.methodIcon}>📷</Text>
+                <View style={styles.methodCol}>
+                  <Text style={[styles.methodTitle, { color: colors.textPrimary }]}>
+                    Camera / Receipt Photo
+                  </Text>
+                  <Text style={[styles.methodDesc, { color: colors.textSecondary }]}>
+                    Capture paper receipt and run on-device OCR
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
-            <View style={styles.fieldRow}>
-              <View style={[styles.fieldGroup, { flex: 1, marginRight: spacing.sm }]}>
-                <Text style={styles.fieldLabel}>Date</Text>
+              <TouchableOpacity
+                style={[
+                  styles.methodCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => handleCaptureScenario("sample_screenshot")}
+                accessibilityRole="button"
+                accessibilityLabel="Import payment screenshot from gallery"
+              >
+                <Text style={styles.methodIcon}>📱</Text>
+                <View style={styles.methodCol}>
+                  <Text style={[styles.methodTitle, { color: colors.textPrimary }]}>
+                    Payment Screenshot
+                  </Text>
+                  <Text style={[styles.methodDesc, { color: colors.textSecondary }]}>
+                    Import GCash, Maya, or banking screenshot
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.methodCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => handleCaptureScenario("manual")}
+                accessibilityRole="button"
+                accessibilityLabel="Enter receipt details manually"
+              >
+                <Text style={styles.methodIcon}>✍️</Text>
+                <View style={styles.methodCol}>
+                  <Text style={[styles.methodTitle, { color: colors.textPrimary }]}>
+                    Enter Manually
+                  </Text>
+                  <Text style={[styles.methodDesc, { color: colors.textSecondary }]}>
+                    Quick record without an image file
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
+          ) : step === "processing" ? (
+            <View style={styles.processingContainer}>
+              <View
+                style={[
+                  styles.processingCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <Text style={styles.processingIcon}>⚡</Text>
+                <Text style={[styles.processingTitle, { color: colors.textPrimary }]}>
+                  Analyzing On-Device
+                </Text>
+                <Text style={[styles.processingSubtitle, { color: colors.textSecondary }]}>
+                  Reading merchant, date, and currency without cloud servers...
+                </Text>
+                <View style={{ width: "100%", gap: 8, marginTop: 16 }}>
+                  <Skeleton width="100%" height={16} />
+                  <Skeleton width="80%" height={16} />
+                  <Skeleton width="60%" height={16} />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <ScrollView
+              style={[styles.formContainer, { backgroundColor: colors.background }]}
+              contentContainerStyle={styles.formContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Source Evidence Card */}
+              <View
+                style={[
+                  styles.sourceCard,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.sourceLabel, { color: colors.textSecondary }]}>
+                  ON-DEVICE EXTRACTION EVIDENCE
+                </Text>
+                <Text
+                  style={[styles.sourceSnippet, { color: colors.textPrimary }]}
+                  numberOfLines={4}
+                >
+                  {sourceSnippet}
+                </Text>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  Merchant / Payee
+                </Text>
                 <TextInput
-                  style={styles.textInput}
-                  placeholder="YYYY-MM-DD"
-                  value={date}
-                  onChangeText={setDate}
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="e.g. Highland Coffee"
+                  placeholderTextColor={colors.textMuted}
+                  value={merchant}
+                  onChangeText={setMerchant}
                 />
               </View>
 
-              <View style={[styles.fieldGroup, { width: 90 }]}>
-                <Text style={styles.fieldLabel}>Currency</Text>
+              <View style={styles.fieldRow}>
+                <View style={[styles.fieldGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Date</Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.controlBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.textMuted}
+                    value={date}
+                    onChangeText={setDate}
+                  />
+                </View>
+
+                <View style={[styles.fieldGroup, { width: 96 }]}>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Currency</Text>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.controlBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    value={currency}
+                    onChangeText={setCurrency}
+                    autoCapitalize="characters"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  Total Amount (Optional)
+                </Text>
                 <TextInput
-                  style={styles.textInput}
-                  value={currency}
-                  onChangeText={setCurrency}
-                  autoCapitalize="characters"
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: amountError ? colors.status.danger.border : colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textMuted}
+                  value={amount}
+                  onChangeText={handleAmountChange}
+                  keyboardType="decimal-pad"
+                />
+                {amountError && (
+                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
+                    {amountError}
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Purpose</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="e.g. Client coffee, Groceries"
+                  placeholderTextColor={colors.textMuted}
+                  value={purpose}
+                  onChangeText={setPurpose}
                 />
               </View>
-            </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Total Amount (Optional)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="0.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Purpose</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Client coffee, Groceries"
-                value={purpose}
-                onChangeText={setPurpose}
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Notes</Text>
-              <TextInput
-                style={[styles.textInput, styles.multilineInput]}
-                placeholder="Any special details or warranty info..."
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-              />
-            </View>
-          </ScrollView>
-        )}
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Notes</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.multilineInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.controlBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="Any special details or warranty info..."
+                  placeholderTextColor={colors.textMuted}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                />
+              </View>
+            </ScrollView>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -331,127 +520,154 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.brand.surface,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 16,
+    height: 56,
     borderBottomWidth: 1,
-    borderBottomColor: colors.brand.border,
+  },
+  headerBtn: {
+    minWidth: 54,
+    minHeight: 44,
+    justifyContent: "center",
   },
   cancelText: {
-    ...typography.body,
-    color: colors.brand.textSecondary,
+    fontSize: 15,
+    fontWeight: "600",
   },
   headerTitle: {
-    ...typography.sectionTitle,
-    color: colors.brand.textPrimary,
+    fontSize: 17,
+    fontWeight: "700",
   },
   saveBtn: {
-    backgroundColor: colors.brand.primary,
-    paddingVertical: 6,
+    paddingVertical: 7,
     paddingHorizontal: 16,
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
   },
   saveBtnText: {
-    ...typography.bodyBold,
-    color: colors.brand.primaryFg,
+    fontSize: 14,
+    fontWeight: "700",
   },
   pickMethodContainer: {
-    padding: spacing.xl,
+    padding: 20,
+    paddingBottom: 60,
   },
   pickMethodTitle: {
-    ...typography.heading2,
-    color: colors.brand.textPrimary,
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   pickMethodSubtitle: {
-    ...typography.supporting,
-    color: colors.brand.textSecondary,
-    marginBottom: spacing.xl,
+    fontSize: 13,
+    marginBottom: 20,
+    lineHeight: 18,
   },
   methodCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.brand.background,
-    borderRadius: borderRadius.card,
-    borderWidth: 1,
-    borderColor: colors.brand.border,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginBottom: 12,
+    minHeight: 68,
   },
   methodIcon: {
     fontSize: 28,
-    marginRight: spacing.md,
+    marginRight: 14,
   },
   methodCol: {
     flex: 1,
   },
   methodTitle: {
-    ...typography.bodyBold,
-    color: colors.brand.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
   },
   methodDesc: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    marginTop: 2,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  processingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  processingCard: {
+    width: "100%",
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: "center",
+  },
+  processingIcon: {
+    fontSize: 36,
+    marginBottom: 10,
+  },
+  processingTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  processingSubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
   },
   formContainer: {
     flex: 1,
   },
   formContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl * 2,
+    padding: 16,
+    paddingBottom: 40,
   },
   sourceCard: {
-    backgroundColor: colors.brand.surfaceAlt,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.status.success.border,
-    marginBottom: spacing.lg,
+    marginBottom: 16,
   },
   sourceLabel: {
-    ...typography.caption,
+    fontSize: 11,
     fontWeight: "700",
-    color: colors.brand.primary,
-    marginBottom: 4,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    marginBottom: 6,
   },
   sourceSnippet: {
-    ...typography.caption,
-    color: colors.brand.textSecondary,
-    fontStyle: "italic",
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
   },
   fieldGroup: {
-    marginBottom: spacing.md,
+    marginBottom: 14,
   },
   fieldRow: {
     flexDirection: "row",
   },
   fieldLabel: {
-    ...typography.caption,
+    fontSize: 13,
     fontWeight: "600",
-    color: colors.brand.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   textInput: {
-    backgroundColor: colors.brand.background,
-    borderWidth: 1,
-    borderColor: colors.brand.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
     height: 48,
-    ...typography.body,
-    color: colors.brand.textPrimary,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+  },
+  inlineError: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
   multilineInput: {
-    height: 70,
+    height: 72,
+    paddingTop: 10,
     textAlignVertical: "top",
-    paddingTop: spacing.sm,
   },
 });
