@@ -123,26 +123,37 @@ export class LocalReceiptVault {
 
   // --- Durability ---
 
-  /** Hydrates from the store. Returns false when there was nothing to load. */
+  /**
+   * Hydrates from the store. Returns false only when there is genuinely
+   * nothing stored yet.
+   *
+   * A store that exists but cannot be read throws. This is deliberate and it
+   * matters more than it looks: the constructor writes a fresh empty index
+   * whenever `load` reports "nothing here", so swallowing a read error would
+   * turn one unreadable byte into permanent, silent data loss. An unreadable
+   * vault must reach the user as a failure they can act on.
+   */
   private load(): boolean {
-    let raw: string | null;
-    try {
-      raw = this.store.readIndex();
-    } catch {
-      // A store that cannot be read is treated as empty rather than crashing
-      // the app on launch; the caller still gets a usable vault.
-      return false;
-    }
-    if (!raw) return false;
+    const stored = this.store.readIndex();
+    if (!stored || stored.length === 0) return false;
 
     let index: VaultIndex;
     try {
-      index = JSON.parse(raw) as VaultIndex;
-    } catch {
-      return false;
+      index = JSON.parse(new TextDecoder().decode(stored)) as VaultIndex;
+    } catch (error) {
+      throw new Error(
+        "The vault index is present but could not be parsed, so Keeptrail will not " +
+          "overwrite it with an empty one. " +
+          (error instanceof Error ? error.message : String(error)),
+      );
     }
 
-    if (!index || typeof index.version !== "number") return false;
+    if (!index || typeof index.version !== "number") {
+      throw new Error(
+        "The vault index is present but does not carry a recognisable version, so " +
+          "Keeptrail will not overwrite it.",
+      );
+    }
     // A newer index than this build understands is left strictly alone: opening
     // it read-write would drop whatever fields this version does not know.
     if (index.version > VAULT_INDEX_VERSION) {
@@ -151,7 +162,12 @@ export class LocalReceiptVault {
           "Update the app rather than opening it with this build.",
       );
     }
-    if (index.version < OLDEST_SUPPORTED_INDEX_VERSION) return false;
+    if (index.version < OLDEST_SUPPORTED_INDEX_VERSION) {
+      throw new Error(
+        `This vault uses format v${index.version}, which this build can no longer read. ` +
+          "Restore from a backup archive rather than starting over.",
+      );
+    }
 
     this.suspendPersist = true;
     try {
@@ -210,7 +226,7 @@ export class LocalReceiptVault {
 
   private persist(): void {
     if (this.suspendPersist) return;
-    this.store.writeIndex(JSON.stringify(this.toIndex()));
+    this.store.writeIndex(new TextEncoder().encode(JSON.stringify(this.toIndex())));
   }
 
   /** Records a change and writes the index through to the store. */

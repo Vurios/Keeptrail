@@ -31,6 +31,24 @@ const HEADER_LENGTH = MAGIC.length + 1 + IV_LENGTH + TAG_LENGTH;
 
 export const VAULT_KEY_LENGTH_BYTES = 32;
 
+/**
+ * Compares bytes against an ASCII marker without going through `toString`.
+ *
+ * `buffer.subarray(...).toString("ascii")` is not portable: Node returns a
+ * Buffer from `subarray`, so it decodes as text, while the `buffer` polyfill
+ * that ships in the React Native bundle returns a plain Uint8Array, whose
+ * `toString` yields "75,84,83,49" instead of "KTS1". The comparison then fails
+ * on perfectly valid data — on device only, invisible to a Node test run.
+ * Comparing byte values has no such ambiguity.
+ */
+export function bytesStartWithAscii(data: Uint8Array, marker: string): boolean {
+  if (data.length < marker.length) return false;
+  for (let i = 0; i < marker.length; i++) {
+    if (data[i] !== marker.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
 /** Generates a new device vault key. Callers must persist it in secure storage. */
 export function generateVaultKey(): Uint8Array {
   return new Uint8Array(randomBytes(VAULT_KEY_LENGTH_BYTES));
@@ -71,7 +89,7 @@ export function openBytes(key: Uint8Array, sealed: Uint8Array): Uint8Array {
   if (buffer.length < HEADER_LENGTH) {
     throw new Error("Encrypted vault data is truncated.");
   }
-  if (buffer.subarray(0, MAGIC.length).toString("ascii") !== MAGIC) {
+  if (!bytesStartWithAscii(sealed, MAGIC)) {
     throw new Error("Data is not an encrypted Keeptrail vault blob.");
   }
 
@@ -111,8 +129,5 @@ export function openText(key: Uint8Array, sealed: Uint8Array): string {
 
 /** True when a blob carries the sealed-vault header. */
 export function isSealed(data: Uint8Array): boolean {
-  return (
-    data.length >= MAGIC.length &&
-    Buffer.from(data.subarray(0, MAGIC.length)).toString("ascii") === MAGIC
-  );
+  return bytesStartWithAscii(data, MAGIC);
 }

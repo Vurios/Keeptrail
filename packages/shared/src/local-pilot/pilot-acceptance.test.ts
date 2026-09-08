@@ -78,15 +78,18 @@ describe("durability across a restart", () => {
     expect(relaunched.getFileBytes(path)).toEqual(bytes);
   });
 
-  it("survives a corrupt index rather than refusing to open", () => {
+  it("refuses to open a corrupt index rather than replacing it with an empty one", () => {
     const store = new InMemoryVaultStore();
-    store.writeIndex("{ this is not json");
+    store.writeIndex(new TextEncoder().encode("{ this is not json"));
 
-    const vault = new LocalReceiptVault(store);
+    // Opening must fail. Starting empty would look like "no receipts yet" and
+    // the very next save would overwrite whatever is still on disk, turning a
+    // recoverable problem into permanent loss.
+    expect(() => new LocalReceiptVault(store)).toThrow(/could not be parsed/i);
 
-    expect(vault.listReceipts()).toEqual([]);
-    // Default collections are restored so the app is usable.
-    expect(vault.listCollections().length).toBeGreaterThan(0);
+    // The stored bytes are left exactly as they were, so a repair or a restore
+    // is still possible.
+    expect(new TextDecoder().decode(store.readIndex()!)).toBe("{ this is not json");
   });
 
   it("keeps the previous index when a write fails midway", () => {

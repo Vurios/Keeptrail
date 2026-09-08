@@ -11,9 +11,14 @@
  *    document; attachment bytes are individual durable files addressed by a
  *    stable relative path. Evidence never sits in the JavaScript heap once it
  *    has been written.
- * 2. Index writes are staged. `writeIndex` must not leave a partially written
- *    index behind if the process dies mid-write — write to a temporary path and
- *    swap it into place.
+ * 2. A write must not be able to leave the vault unreadable. An implementation
+ *    either writes atomically or keeps the previous good copy until the new one
+ *    has been read back successfully.
+ *
+ * The index is exchanged as bytes rather than text. It used to be a string,
+ * which meant an encrypting implementation had to base64 its ciphertext into
+ * a text file; that round trip corrupted the index on device while passing
+ * every in-memory test. Bytes in, bytes out, no encoding layer to get wrong.
  */
 
 import type {
@@ -49,9 +54,9 @@ export interface VaultIndex {
 
 export interface VaultStore {
   /** Returns the serialised index, or null when the vault has never been written. */
-  readIndex(): string | null;
-  /** Persists the index durably. Must be crash-safe (stage, then swap). */
-  writeIndex(serialized: string): void;
+  readIndex(): Uint8Array | null;
+  /** Persists the index durably, without risking the previous copy. */
+  writeIndex(serialized: Uint8Array): void;
 
   readAttachment(relativePath: string): Uint8Array | null;
   writeAttachment(relativePath: string, bytes: Uint8Array): void;
@@ -67,14 +72,14 @@ export interface VaultStore {
  * filesystem. It is explicitly not durable, and says so.
  */
 export class InMemoryVaultStore implements VaultStore {
-  private index: string | null = null;
+  private index: Uint8Array | null = null;
   private files = new Map<string, Uint8Array>();
 
-  readIndex(): string | null {
+  readIndex(): Uint8Array | null {
     return this.index;
   }
 
-  writeIndex(serialized: string): void {
+  writeIndex(serialized: Uint8Array): void {
     this.index = serialized;
   }
 

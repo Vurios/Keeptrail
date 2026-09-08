@@ -12,7 +12,10 @@ import {
   buildAttachmentPath,
   buildReceiptsCsv,
   buildReceiptsReportHtml,
+  bytesStartWithAscii,
   computeSha256,
+  createEncryptedBackup,
+  restoreEncryptedBackup,
   findAllDuplicateSuggestions,
   generateVaultKey,
   isSealed,
@@ -118,35 +121,37 @@ describe("index migration", () => {
     const store = new InMemoryVaultStore();
     // A v1 index: no tags, no custom fields, no drafts, no definitions.
     store.writeIndex(
-      JSON.stringify({
-        version: 1,
-        receipts: [
-          {
-            id: "rec_legacy",
-            title: "Legacy",
-            merchant: "Old Merchant",
-            transaction_date: "2026-01-01",
-            currency: "PHP",
-            total_minor_units: 12345,
-            subtotal_minor_units: null,
-            tax_minor_units: null,
-            document_type: "receipt",
-            review_status: "reviewed",
-            notes: null,
-            purpose: null,
-            collection_ids: ["col_purchases"],
-            is_trashed: false,
-            created_at: "2026-01-01T00:00:00.000Z",
-            updated_at: "2026-01-01T00:00:00.000Z",
-            deleted_at: null,
-          },
-        ],
-        attachments: [],
-        collections: [],
-        actions: [],
-        last_backup_timestamp: null,
-        records_modified_since_backup: 0,
-      }),
+      new TextEncoder().encode(
+        JSON.stringify({
+          version: 1,
+          receipts: [
+            {
+              id: "rec_legacy",
+              title: "Legacy",
+              merchant: "Old Merchant",
+              transaction_date: "2026-01-01",
+              currency: "PHP",
+              total_minor_units: 12345,
+              subtotal_minor_units: null,
+              tax_minor_units: null,
+              document_type: "receipt",
+              review_status: "reviewed",
+              notes: null,
+              purpose: null,
+              collection_ids: ["col_purchases"],
+              is_trashed: false,
+              created_at: "2026-01-01T00:00:00.000Z",
+              updated_at: "2026-01-01T00:00:00.000Z",
+              deleted_at: null,
+            },
+          ],
+          attachments: [],
+          collections: [],
+          actions: [],
+          last_backup_timestamp: null,
+          records_modified_since_backup: 0,
+        }),
+      ),
     );
 
     const vault = new LocalReceiptVault(store);
@@ -159,13 +164,15 @@ describe("index migration", () => {
     expect(migrated?.custom_fields).toEqual({});
 
     // The upgrade is written back once, not recomputed every launch.
-    const persisted = JSON.parse(store.readIndex()!);
+    const persisted = JSON.parse(new TextDecoder().decode(store.readIndex()!));
     expect(persisted.version).toBe(VAULT_INDEX_VERSION);
   });
 
   it("refuses an index from a newer build instead of silently dropping fields", () => {
     const store = new InMemoryVaultStore();
-    store.writeIndex(JSON.stringify({ version: VAULT_INDEX_VERSION + 1, receipts: [] }));
+    store.writeIndex(
+      new TextEncoder().encode(JSON.stringify({ version: VAULT_INDEX_VERSION + 1, receipts: [] })),
+    );
     expect(() => new LocalReceiptVault(store)).toThrow(/newer version/i);
   });
 });
@@ -509,5 +516,40 @@ describe("PDF report HTML", () => {
       includesUnreviewed: true,
     });
     expect(html).toContain("Receipts (1)");
+  });
+});
+
+// --- Portability of the on-disk headers --------------------------------------
+
+describe("header checks do not depend on Buffer.subarray behaviour", () => {
+  it("recognises a sealed blob from a plain Uint8Array", () => {
+    const sealed = sealBytes(generateVaultKey(), new TextEncoder().encode("x"));
+    // A copy with no Buffer prototype at all: this is what the React Native
+    // polyfill hands back from `subarray`, and what broke the magic check on
+    // device while every in-memory test passed.
+    const plain = Uint8Array.from(sealed);
+    expect(isSealed(plain)).toBe(true);
+  });
+
+  it("matches an ASCII marker byte by byte", () => {
+    expect(bytesStartWithAscii(new TextEncoder().encode("KTS1rest"), "KTS1")).toBe(true);
+    expect(bytesStartWithAscii(new TextEncoder().encode("NOPE"), "KTS1")).toBe(false);
+    expect(bytesStartWithAscii(new Uint8Array(2), "KTS1")).toBe(false);
+  });
+
+  it("opens a sealed blob that arrives as a plain Uint8Array", () => {
+    const key = generateVaultKey();
+    const sealed = sealBytes(key, new TextEncoder().encode("receipt data"));
+    const plain = Uint8Array.from(sealed);
+    expect(new TextDecoder().decode(openBytes(key, plain))).toBe("receipt data");
+  });
+
+  it("reads a backup archive that arrives as a plain Uint8Array", () => {
+    const archive = createEncryptedBackup(
+      { receipts: [], attachments: [], collections: [], actions: [], files: {} },
+      "a good password",
+    );
+    const plain = Uint8Array.from(archive);
+    expect(restoreEncryptedBackup(plain, "a good password").receipts).toEqual([]);
   });
 });

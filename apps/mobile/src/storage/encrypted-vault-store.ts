@@ -6,24 +6,22 @@
  * apps out; this protects against a rooted device, an ADB pull, or physical
  * extraction of the flash.
  *
+ * Both the index and the originals travel as bytes. An earlier version
+ * base64-encoded the sealed index into a text file, which round-tripped
+ * perfectly in memory and produced an unreadable vault on device — the encoding
+ * layer existed only because the store contract used to be a string, and
+ * deleting it removed the whole class of bug.
+ *
  * Two behaviours matter more than the encryption itself:
  *
- * - **Unreadable is not empty.** If a sealed blob cannot be opened, the wrapper
+ * - **Unreadable is not empty.** If a sealed blob cannot be opened, this
  *   throws. Returning null would present an empty vault to a user whose records
  *   are intact but locked, and would then let a save overwrite them.
  * - **Old plaintext is migrated, not rejected.** A vault written before
  *   encryption shipped still opens, and is rewritten sealed on the next write.
  */
 
-import {
-  isSealed,
-  openBytes,
-  openText,
-  sealBytes,
-  sealText,
-  type VaultStore,
-} from "@katibay/shared";
-import { Buffer } from "buffer";
+import { isSealed, openBytes, sealBytes, type VaultStore } from "@katibay/shared";
 
 export class EncryptedVaultStore implements VaultStore {
   constructor(
@@ -31,31 +29,22 @@ export class EncryptedVaultStore implements VaultStore {
     private readonly key: Uint8Array,
   ) {}
 
-  readIndex(): string | null {
-    const raw = this.inner.readIndex();
-    if (raw === null) return null;
-
-    // The raw store hands back text. A sealed index is base64 of the blob, so
-    // that the file stays a text file the staged-write path can handle.
-    if (!raw.startsWith(SEALED_TEXT_PREFIX)) {
-      // Written before at-rest encryption shipped. Readable, and upgraded on
-      // the next write rather than discarded.
-      return raw;
-    }
-
-    const sealed = new Uint8Array(Buffer.from(raw.slice(SEALED_TEXT_PREFIX.length), "base64"));
-    return openText(this.key, sealed);
+  readIndex(): Uint8Array | null {
+    const stored = this.inner.readIndex();
+    if (stored === null || stored.length === 0) return null;
+    // Written before at-rest encryption shipped: readable, and upgraded to a
+    // sealed form on the next write rather than discarded.
+    if (!isSealed(stored)) return stored;
+    return openBytes(this.key, stored);
   }
 
-  writeIndex(serialized: string): void {
-    const sealed = sealText(this.key, serialized);
-    this.inner.writeIndex(SEALED_TEXT_PREFIX + Buffer.from(sealed).toString("base64"));
+  writeIndex(serialized: Uint8Array): void {
+    this.inner.writeIndex(sealBytes(this.key, serialized));
   }
 
   readAttachment(relativePath: string): Uint8Array | null {
     const stored = this.inner.readAttachment(relativePath);
     if (stored === null) return null;
-    // Originals written before encryption shipped are returned as they are.
     if (!isSealed(stored)) return stored;
     return openBytes(this.key, stored);
   }
@@ -77,9 +66,3 @@ export class EncryptedVaultStore implements VaultStore {
     return this.inner.listAttachmentPaths();
   }
 }
-
-/**
- * Marks an index file as sealed. Present so a plaintext index from an earlier
- * build is distinguishable from ciphertext without trying to decrypt it first.
- */
-const SEALED_TEXT_PREFIX = "keeptrail.sealed.v1:";

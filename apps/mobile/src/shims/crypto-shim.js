@@ -279,7 +279,11 @@ function expandKey(key) {
   const Nk = 8;
   const Nr = 14;
   const w = new Uint8Array(4 * 4 * (Nr + 1));
-  key.copy ? key.copy(w, 0, 0, 32) : w.set(key.subarray(0, 32), 0);
+  // `w.set`, never `key.copy(w, ...)`. Node's native Buffer.copy accepts a
+  // plain Uint8Array target, but the `buffer` polyfill that ships in the
+  // bundle throws "argument should be a Buffer" — so the copy form worked
+  // under the Node test runner and failed on device.
+  w.set(key.subarray(0, 32), 0);
 
   let rcon = 1;
   for (let i = Nk; i < 4 * (Nr + 1); i++) {

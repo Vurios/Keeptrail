@@ -1,25 +1,20 @@
 # Keeptrail Tester Guide — Free Local Android APK Pilot
 
-> **This guide describes the v1.0.3 build, which is older than the current
-> source.** Substantial changes have landed since it was produced — durable
-> storage, corrected backup cryptography, a rebuilt navigation and design
-> system, and honest capture/reminder copy. Do not treat the download below as
-> representative of the current code, and do not publish a new guide until a new
-> signed APK has actually been built and its checksum recorded from the file.
->
-> The v1.0.3 APK is **not present in `dist/`** in this working tree, so the
-> checksum and release links below could not be verified locally.
-
 **App:** Keeptrail
 **Package ID:** `com.keeptrail.app`
-**Version:** `1.0.3` (versionCode `4`)
-**Build Profile:** `pilot` (standalone internal distribution)
-**APK Filename:** `keeptrail-pilot-v1.0.3.apk`
-**SHA-256 Checksum:** `e41d6f2f878bbbbe5983f69f8047bfbcda5dd0d2cdc6c6751991aa1b1226f0a3`
-**GitHub Release:** https://github.com/Vurios/Keeptrail/releases/tag/v1.0.3-pilot
-**Direct GitHub APK Download:** https://github.com/Vurios/Keeptrail/releases/download/v1.0.3-pilot/keeptrail-pilot-v1.0.3.apk
-**Direct EAS Download Link:** https://expo.dev/artifacts/eas/l3D8iSjxGk9F-Afvua2FLv5P3V0UGhhi4f0tUn7TDfo.apk
-**Public Build Page:** https://expo.dev/accounts/gilrubis/projects/keeptrail/builds/2ec44b7c-60fd-44cc-9c43-51f6533e37e3
+**Version:** `1.1.1` (versionCode `6`)
+**APK:** `dist/keeptrail-pilot-v1.1.1.apk` (77,349,575 bytes)
+**SHA-256:** `17ca3241fa50b4a6e130fa9e9e25cb1094e389a1f1a6dbde543c835c418e63fb`
+**Signing certificate SHA-256:** `69326c85676279c583d94664530194b8e859478cb360482845aaf6b8f3d72200`
+
+> **If you already have v1.0.x installed, uninstall it first.** This build is
+> signed with a different key, so Android will refuse to install it over the old
+> one. Uninstalling deletes the receipts that version stored, so export a backup
+> from the old app first if you want to keep them.
+
+> **This build has no internet permission at all.** Android will not let it make
+> a network request even if it tried to. Nothing about your receipts can leave
+> the phone except through a file you export and send yourself.
 
 ---
 

@@ -17,6 +17,7 @@
 
 import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv, createHash } from "crypto";
 import { Buffer } from "buffer";
+import { bytesStartWithAscii } from "./local-encryption";
 import type {
   BackupArchiveContent,
   BackupManifest,
@@ -142,8 +143,10 @@ export function restoreEncryptedBackup(
     throw new Error("Invalid or truncated .keeptrail backup file.");
   }
 
-  const magic = buf.subarray(0, magicLen).toString("ascii");
-  if (magic !== MAGIC_HEADER) {
+  // Byte comparison rather than `subarray(...).toString("ascii")`: the React
+  // Native buffer polyfill returns a plain Uint8Array from `subarray`, whose
+  // `toString` produces comma-joined decimals and never matches the header.
+  if (!bytesStartWithAscii(archiveBuffer, MAGIC_HEADER)) {
     throw new Error("File is not a valid Keeptrail backup archive.");
   }
 

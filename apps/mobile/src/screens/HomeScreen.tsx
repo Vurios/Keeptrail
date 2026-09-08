@@ -209,11 +209,11 @@ export function HomeScreen({
                 <Icon name="needsReview" size={22} color={colors.status.warning.text} />
                 <View style={{ flex: 1 }}>
                   <AppText role="bodyStrong">
-                    {stats.unreviewedCount} receipt{stats.unreviewedCount === 1 ? "" : "s"} need
-                    review
+                    {stats.unreviewedCount} receipt{stats.unreviewedCount === 1 ? "" : "s"}{" "}
+                    {stats.unreviewedCount === 1 ? "needs" : "need"} review
                   </AppText>
                   <AppText role="small" tone="secondary">
-                    Scanned amounts have not been confirmed yet
+                    Their amounts have not been confirmed yet
                   </AppText>
                 </View>
                 <Icon name="chevron" size={20} color={colors.textMuted} />
