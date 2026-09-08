@@ -545,8 +545,11 @@ export class LocalReceiptVault {
     if (!this.customFields.delete(id)) return false;
     for (const receipt of this.receipts.values()) {
       if (id in receipt.custom_fields) {
-        const { [id]: _removed, ...rest } = receipt.custom_fields;
-        receipt.custom_fields = rest;
+        const remaining: Record<string, string> = {};
+        for (const [fieldId, value] of Object.entries(receipt.custom_fields)) {
+          if (fieldId !== id) remaining[fieldId] = value;
+        }
+        receipt.custom_fields = remaining;
       }
     }
     this.commit();

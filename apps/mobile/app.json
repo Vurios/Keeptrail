@@ -26,7 +26,12 @@
       },
       "predictiveBackGestureEnabled": true,
       "allowBackup": false,
-      "permissions": ["android.permission.VIBRATE"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.VIBRATE"
+      ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",

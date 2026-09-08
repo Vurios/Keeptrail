@@ -16,7 +16,7 @@
  * now optional and explicit.
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -60,6 +60,13 @@ import {
   todayIso,
   validateDateInput,
 } from "../utils/dates";
+import {
+  cancelReminder,
+  getNotificationPermission,
+  requestNotificationPermission,
+  scheduleReminder,
+  type PermissionOutcome,
+} from "../services/reminder-notifications";
 import { haptics } from "../utils/haptics";
 
 type Scope = "pending" | "completed";
@@ -92,6 +99,21 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
   const [linkedReceiptId, setLinkedReceiptId] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
+  const [permission, setPermission] = useState<PermissionOutcome | null>(null);
+
+  // Read, never requested here: the prompt belongs to the moment the user saves
+  // their first reminder, not to opening the screen.
+  useEffect(() => {
+    let cancelled = false;
+    getNotificationPermission()
+      .then((outcome) => {
+        if (!cancelled) setPermission(outcome);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const visible = useMemo(() => {
     const filtered = actions.filter((a) =>
@@ -143,7 +165,7 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
     const now = new Date().toISOString();
     const linked = linkedReceiptId ? vault.getReceipt(linkedReceiptId) : null;
 
-    saveAction({
+    const created: ActionRecord = {
       id: `act_${Date.now()}`,
       // Empty when the user did not link one. A relationship the user never
       // asserted is never displayed.
@@ -157,17 +179,47 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
       notes: notes.trim() || null,
       created_at: now,
       updated_at: now,
-    });
+    };
+    saveAction(created);
 
     haptics.success();
-    showSnackbar({
-      message: `Reminder set for ${formatDate(
-        dueDate.trim(),
-      )}. Keeptrail shows it here — it does not send a notification.`,
-      tone: "success",
-      durationMs: 5000,
-    });
     closeComposer();
+
+    // Permission is asked for now, because now is when it buys the user
+    // something. A refusal still leaves a working list.
+    void (async () => {
+      const outcome = await requestNotificationPermission();
+      setPermission(outcome);
+
+      if (outcome !== "granted") {
+        showSnackbar({
+          message:
+            outcome === "blocked"
+              ? `Reminder saved for ${formatDate(
+                  dueDate.trim(),
+                )}. Notifications are turned off for Keeptrail in Android settings, so it will only appear in this list.`
+              : `Reminder saved for ${formatDate(
+                  dueDate.trim(),
+                )}. Without notification permission it will only appear in this list.`,
+          tone: "warning",
+          durationMs: 6000,
+        });
+        return;
+      }
+
+      const scheduled = await scheduleReminder(created);
+      showSnackbar({
+        message: scheduled
+          ? `Reminder set. Keeptrail will notify you on the morning of ${formatDate(
+              dueDate.trim(),
+            )}.`
+          : `Reminder saved for ${formatDate(
+              dueDate.trim(),
+            )}. That date has already passed, so no notification was scheduled.`,
+        tone: scheduled ? "success" : "warning",
+        durationMs: 5000,
+      });
+    })();
   }, [
     title,
     dueDate,
@@ -189,13 +241,17 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
           style: "destructive",
           onPress: () => {
             deleteAction(action.id);
+            void cancelReminder(action);
             haptics.warning();
             showSnackbar({
               message: "Reminder deleted.",
               tone: "warning",
               action: {
                 label: "Undo",
-                onPress: () => saveAction(action),
+                onPress: () => {
+                  saveAction(action);
+                  void scheduleReminder(action);
+                },
               },
             });
           },
@@ -224,6 +280,11 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
               onPress={() => {
                 toggleActionStatus(item.id);
                 haptics.tap();
+                // Completing a reminder must also silence it; leaving the
+                // trigger scheduled is how an app nags about done work.
+                void (item.status === "completed"
+                  ? scheduleReminder({ ...item, status: "pending" })
+                  : cancelReminder(item));
               }}
             />
 
@@ -293,7 +354,11 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <AppBar
         title="Reminders"
-        subtitle="Your deadline list. Open Keeptrail to check it — nothing is pushed to you."
+        subtitle={
+          permission === "granted"
+            ? "Keeptrail notifies you on the morning a deadline falls due"
+            : "Your deadline list. Turn on notifications to be told when one falls due."
+        }
         actions={
           <IconButton
             icon="add"

@@ -34,6 +34,7 @@ function MainApp() {
   const [tab, setTab] = useState<TabKey>("home");
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [receiptsFilter, setReceiptsFilter] = useState<{
     collectionId?: string;
@@ -149,6 +150,11 @@ function MainApp() {
                   haptics.tap();
                   setCaptureOpen(true);
                 }}
+                onResumeDraft={(draftId) => {
+                  haptics.tap();
+                  setResumeDraftId(draftId);
+                  setCaptureOpen(true);
+                }}
               />
             )}
             {tab === "receipts" && (
@@ -203,7 +209,14 @@ function MainApp() {
         </>
       )}
 
-      <CaptureModal visible={captureOpen} onClose={() => setCaptureOpen(false)} />
+      <CaptureModal
+        visible={captureOpen}
+        resumeDraftId={resumeDraftId}
+        onClose={() => {
+          setCaptureOpen(false);
+          setResumeDraftId(null);
+        }}
+      />
 
       <OnboardingModal
         visible={onboardingOpen}

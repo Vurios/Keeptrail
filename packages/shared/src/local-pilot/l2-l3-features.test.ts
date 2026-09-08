@@ -265,11 +265,11 @@ describe("custom fields", () => {
 
     // An editor with no custom-field UI saves the receipt again, omitting the
     // property entirely rather than passing an empty object.
-    const { custom_fields: _omitted, ...withoutCustomFields } = receipt({
-      id: "rec_edit",
-      merchant: "Renamed",
-    });
-    vault.saveReceipt(withoutCustomFields);
+    const withoutCustomFields: Record<string, unknown> = {
+      ...receipt({ id: "rec_edit", merchant: "Renamed" }),
+    };
+    delete withoutCustomFields.custom_fields;
+    vault.saveReceipt(withoutCustomFields as Parameters<typeof vault.saveReceipt>[0]);
 
     expect(vault.getReceipt("rec_edit")?.merchant).toBe("Renamed");
     expect(vault.getReceipt("rec_edit")?.custom_fields).toEqual({ cf_keep: "still here" });

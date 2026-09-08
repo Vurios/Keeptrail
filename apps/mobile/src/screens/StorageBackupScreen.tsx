@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
 
+import type { CustomFieldType } from "@katibay/shared";
 import { useTheme } from "../theme/ThemeContext";
 import { useLocalVault, type BackupArchiveInfo } from "../vault-context";
 import { useSnackbar } from "../components/SnackbarContext";
@@ -29,10 +30,21 @@ import {
   Field,
   IconButton,
   Notice,
+  OptionRow,
   Section,
   useContentInsets,
 } from "../components/primitives";
 import { Icon } from "../components/Icon";
+import {
+  isSharingAvailable,
+  pickBackupArchive,
+  readPickedArchive,
+  shareFile,
+  writeCsvExport,
+  writePdfExport,
+  type ExportedFile,
+} from "../services/exports";
+import { formatBenchmarkReport, runDeviceBenchmark } from "../services/device-benchmark";
 import { formatDate } from "../utils/dates";
 import { haptics } from "../utils/haptics";
 
@@ -60,7 +72,14 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
     exportEncryptedBackup,
     listBackupArchives,
     restoreFromArchive,
+    restoreFromBytes,
     deleteBackupArchive,
+    receipts,
+    collections,
+    encryptedAtRest,
+    customFields,
+    saveCustomFieldDefinition,
+    deleteCustomFieldDefinition,
   } = useLocalVault();
   const { showSnackbar } = useSnackbar();
   const contentInsets = useContentInsets();
@@ -76,6 +95,18 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
   const [restorePassword, setRestorePassword] = useState("");
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  /** An archive chosen through the system picker, not stored by the app. */
+  const [pickedArchive, setPickedArchive] = useState<{
+    name: string;
+    bytes: Uint8Array;
+    sizeBytes: number;
+  } | null>(null);
+  const [exportingReport, setExportingReport] = useState<"csv" | "pdf" | null>(null);
+  const [fieldEditorOpen, setFieldEditorOpen] = useState(false);
+  const [fieldLabel, setFieldLabel] = useState("");
+  const [fieldType, setFieldType] = useState<CustomFieldType>("text");
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [benchmarking, setBenchmarking] = useState(false);
 
   const refreshArchives = useCallback(() => {
     setArchives(listBackupArchives());
@@ -198,6 +229,209 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
     );
   }, []);
 
+  /**
+   * Restores from a file the user picks anywhere on the device.
+   *
+   * This is what makes a backup portable: an archive copied to a computer, a
+   * memory card or a cloud drive can be brought back on a clean install, which
+   * a list of app-private files alone could never support.
+   */
+  const handlePickArchive = useCallback(async () => {
+    haptics.tap();
+    const result = await pickBackupArchive();
+    if (result.status === "cancelled") return;
+    if (result.status === "failed") {
+      haptics.error();
+      showSnackbar({ message: result.reason, tone: "danger", durationMs: 6000 });
+      return;
+    }
+
+    try {
+      const bytes = readPickedArchive(result.uri);
+      setPickedArchive({ name: result.name, bytes, sizeBytes: bytes.length });
+      setRestorePassword("");
+      setRestoreError(null);
+    } catch (error) {
+      haptics.error();
+      showSnackbar({
+        message:
+          error instanceof Error
+            ? `That file could not be read: ${error.message}`
+            : "That file could not be read.",
+        tone: "danger",
+        durationMs: 6000,
+      });
+    }
+  }, [showSnackbar]);
+
+  const handleRestorePicked = useCallback(() => {
+    if (!pickedArchive || restoring) return;
+    if (!restorePassword) {
+      setRestoreError("Enter the password this archive was created with.");
+      haptics.error();
+      return;
+    }
+
+    setRestoring(true);
+    setTimeout(() => {
+      try {
+        const outcome = restoreFromBytes(pickedArchive.bytes, restorePassword);
+        haptics.success();
+        setPickedArchive(null);
+        setRestorePassword("");
+        setRestoreError(null);
+        refreshArchives();
+        showSnackbar({
+          message: `Restored ${outcome.receiptCount} receipt(s) and ${outcome.attachmentCount} original(s). Every checksum matched.`,
+          tone: "success",
+          durationMs: 6000,
+        });
+      } catch (error) {
+        haptics.error();
+        setRestoreError(
+          error instanceof Error
+            ? error.message
+            : "The archive could not be read with that password.",
+        );
+      } finally {
+        setRestoring(false);
+      }
+    }, 30);
+  }, [pickedArchive, restoring, restorePassword, restoreFromBytes, refreshArchives, showSnackbar]);
+
+  /** Hands a stored archive to the share sheet so it can leave this phone. */
+  const handleShareArchive = useCallback(
+    async (archive: BackupArchiveInfo) => {
+      haptics.tap();
+      if (!(await isSharingAvailable())) {
+        showSnackbar({
+          message: "This device has no app that can receive the file.",
+          tone: "warning",
+        });
+        return;
+      }
+      try {
+        await shareFile(
+          { uri: archive.uri, fileName: archive.name, sizeBytes: archive.sizeBytes },
+          "application/octet-stream",
+          "Send your encrypted backup",
+        );
+      } catch (error) {
+        haptics.error();
+        showSnackbar({
+          message: error instanceof Error ? error.message : "The file could not be shared.",
+          tone: "danger",
+        });
+      }
+    },
+    [showSnackbar],
+  );
+
+  /**
+   * CSV and PDF are summaries, not backups, and the copy around them says so.
+   * Only the encrypted archive carries the originals.
+   */
+  const handleExportReport = useCallback(
+    async (kind: "csv" | "pdf") => {
+      if (exportingReport) return;
+      haptics.tap();
+      setExportingReport(kind);
+      try {
+        const file: ExportedFile =
+          kind === "csv"
+            ? writeCsvExport(receipts, collections)
+            : await writePdfExport(receipts, collections, {
+                title: "Keeptrail receipts",
+                includesUnreviewed: true,
+              });
+
+        if (await isSharingAvailable()) {
+          await shareFile(
+            file,
+            kind === "csv" ? "text/csv" : "application/pdf",
+            "Send your report",
+          );
+        } else {
+          showSnackbar({
+            message: `Saved ${file.fileName} on this phone.`,
+            tone: "success",
+          });
+        }
+      } catch (error) {
+        haptics.error();
+        showSnackbar({
+          message:
+            error instanceof Error ? `The report failed: ${error.message}` : "The report failed.",
+          tone: "danger",
+          durationMs: 6000,
+        });
+      } finally {
+        setExportingReport(null);
+      }
+    },
+    [exportingReport, receipts, collections, showSnackbar],
+  );
+
+  /**
+   * Runs the on-device measurement and prints it to the log.
+   *
+   * Kept out of the tester-facing flow deliberately: it is an instrument for
+   * capturing real numbers with `adb logcat`, not a feature.
+   */
+  const handleRunBenchmark = useCallback(async () => {
+    if (benchmarking) return;
+    haptics.tap();
+    setBenchmarking(true);
+    try {
+      const report = await runDeviceBenchmark(vault);
+      // eslint-disable-next-line no-console
+      console.log(formatBenchmarkReport(report));
+      const slowest = report.samples.reduce((worst, sample) =>
+        sample.medianMs > worst.medianMs ? sample : worst,
+      );
+      showSnackbar({
+        message: `Benchmark done. Slowest: ${slowest.name} at ${slowest.medianMs}ms. Full results are in the device log.`,
+        tone: "neutral",
+        durationMs: 8000,
+      });
+    } catch (error) {
+      haptics.error();
+      showSnackbar({
+        message: error instanceof Error ? error.message : "The benchmark failed.",
+        tone: "danger",
+      });
+    } finally {
+      setBenchmarking(false);
+    }
+  }, [benchmarking, vault, showSnackbar]);
+
+  const handleSaveField = useCallback(() => {
+    const label = fieldLabel.trim();
+    if (!label) {
+      setFieldError("Give the field a name.");
+      haptics.error();
+      return;
+    }
+    if (customFields.some((f) => f.label.toLowerCase() === label.toLowerCase())) {
+      setFieldError("You already have a field with that name.");
+      haptics.error();
+      return;
+    }
+
+    saveCustomFieldDefinition({
+      id: `cf_${Date.now()}`,
+      label,
+      field_type: fieldType,
+      created_at: new Date().toISOString(),
+    });
+    haptics.success();
+    setFieldEditorOpen(false);
+    setFieldLabel("");
+    setFieldType("text");
+    setFieldError(null);
+    showSnackbar({ message: `"${label}" added to every receipt form.`, tone: "success" });
+  }, [fieldLabel, fieldType, customFields, saveCustomFieldDefinition, showSnackbar]);
+
   const handleEmptyTrash = useCallback(() => {
     Alert.alert(
       "Empty the trash?",
@@ -238,13 +472,17 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
           <Notice tone="danger" icon="warning" title="Heads up about storage" body={warning} />
         ) : (
           <Notice
-            tone="neutral"
-            icon="lock"
-            title="Where your receipts live"
+            tone={encryptedAtRest ? "success" : "warning"}
+            icon={encryptedAtRest ? "lock" : "warning"}
+            title={
+              encryptedAtRest
+                ? "Encrypted on this device"
+                : "Saved, but not encrypted on this device"
+            }
             body={
-              vaultLocation
-                ? `App-private storage on this device. Other apps cannot read it, and uninstalling Keeptrail deletes it along with everything inside.`
-                : "App-private storage on this device."
+              encryptedAtRest
+                ? "Your records and every original are encrypted with a key held by this phone's keystore, in storage no other app can read. Uninstalling Keeptrail deletes all of it."
+                : "Your receipts are in app-private storage, but this device could not provide a secure key, so they are not encrypted at rest."
             }
           />
         )}
@@ -348,8 +586,15 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                       </AppText>
                     </View>
                     <Button
-                      label="Restore"
+                      label="Send"
                       variant="tonal"
+                      icon="backup"
+                      onPress={() => handleShareArchive(archive)}
+                      accessibilityHint="Copies this archive off the phone using the share sheet"
+                    />
+                    <Button
+                      label="Restore"
+                      variant="outlined"
                       icon="restoreArchive"
                       onPress={() => confirmRestore(archive)}
                     />
@@ -382,14 +627,139 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             </View>
           )}
 
-          <View style={{ marginTop: spacing.md }}>
+          <View style={{ marginTop: spacing.md, gap: spacing.md }}>
             <Notice
               tone="warning"
               icon="warning"
               title="A backup on this phone is not a backup"
-              body="If the phone is lost, stolen or wiped, these files go with it. Copy an archive to a computer, a memory card or a cloud drive you control."
+              body="If the phone is lost, stolen or wiped, these files go with it. Use Send to copy an archive to a computer, a memory card or a cloud drive you control."
             />
+
+            <Card>
+              <View style={{ gap: spacing.md }}>
+                <AppText role="bodyStrong">Restore from a file</AppText>
+                <AppText role="small" tone="secondary">
+                  Bring back an archive from anywhere on this device — Downloads, a memory card, or
+                  a cloud drive you have synced yourself. This is how a backup survives a new phone.
+                </AppText>
+                <Button
+                  label="Choose a backup file"
+                  variant="outlined"
+                  icon="restoreArchive"
+                  fullWidth
+                  onPress={handlePickArchive}
+                />
+              </View>
+            </Card>
           </View>
+        </Section>
+
+        <Section title="Reports">
+          <Card>
+            <View style={{ gap: spacing.md }}>
+              <AppText role="small" tone="secondary">
+                A spreadsheet or a printable summary of your {receipts.length} saved receipt
+                {receipts.length === 1 ? "" : "s"}. Reports do not contain the original documents,
+                so they are not a backup — only the encrypted archive above is.
+              </AppText>
+              <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+                <Button
+                  label="Export CSV"
+                  variant="tonal"
+                  icon="storage"
+                  busy={exportingReport === "csv"}
+                  disabled={receipts.length === 0}
+                  onPress={() => handleExportReport("csv")}
+                />
+                <Button
+                  label="Export PDF"
+                  variant="tonal"
+                  icon="document"
+                  busy={exportingReport === "pdf"}
+                  disabled={receipts.length === 0}
+                  onPress={() => handleExportReport("pdf")}
+                />
+              </View>
+              <AppText role="small" tone="muted">
+                Where the file goes is your choice. Keeptrail hands it to Android's share sheet and
+                uploads nothing itself.
+              </AppText>
+            </View>
+          </Card>
+        </Section>
+
+        <Section title="Custom fields">
+          <Card>
+            <View style={{ gap: spacing.md }}>
+              <AppText role="small" tone="secondary">
+                Add a field of your own — a warranty end date, a claim reference — and it appears on
+                every receipt form. Fields you add are stored on this phone like everything else.
+              </AppText>
+
+              {customFields.length > 0 ? (
+                <View style={{ gap: spacing.sm }}>
+                  {customFields.map((definition) => (
+                    <View
+                      key={definition.id}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: spacing.sm,
+                        minHeight: spacing.touch,
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <AppText role="smallStrong">{definition.label}</AppText>
+                        <AppText role="small" tone="muted">
+                          {definition.field_type === "date"
+                            ? "Date"
+                            : definition.field_type === "number"
+                              ? "Number"
+                              : "Text"}
+                        </AppText>
+                      </View>
+                      <IconButton
+                        icon="trash"
+                        tone="danger"
+                        label={`Delete the field ${definition.label}`}
+                        onPress={() =>
+                          Alert.alert(
+                            `Delete "${definition.label}"?`,
+                            "The field and every value you have entered for it are removed. Your receipts themselves are not affected.",
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Delete",
+                                style: "destructive",
+                                onPress: () => {
+                                  deleteCustomFieldDefinition(definition.id);
+                                  haptics.warning();
+                                  showSnackbar({
+                                    message: `"${definition.label}" removed.`,
+                                    tone: "warning",
+                                  });
+                                },
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <Button
+                label="Add a field"
+                variant="tonal"
+                icon="add"
+                onPress={() => {
+                  haptics.tap();
+                  setFieldEditorOpen(true);
+                }}
+              />
+            </View>
+          </Card>
         </Section>
 
         <Section title="Housekeeping">
@@ -410,6 +780,24 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                 fullWidth
                 disabled={stats.trashedCount === 0}
                 onPress={handleEmptyTrash}
+              />
+            </View>
+          </Card>
+        </Section>
+        <Section title="Diagnostics">
+          <Card>
+            <View style={{ gap: spacing.md }}>
+              <AppText role="small" tone="secondary">
+                Measures encryption, backup and search speed on this phone and writes the numbers to
+                the device log. Nothing is sent anywhere and your records are not changed.
+              </AppText>
+              <Button
+                label="Run device benchmark"
+                variant="outlined"
+                icon="storage"
+                fullWidth
+                busy={benchmarking}
+                onPress={handleRunBenchmark}
               />
             </View>
           </Card>
@@ -472,6 +860,119 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                 fullWidth
                 busy={exporting}
                 onPress={handleExport}
+              />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={fieldEditorOpen}
+        animationType="slide"
+        onRequestClose={() => setFieldEditorOpen(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <AppBar
+            title="New custom field"
+            onBack={() => setFieldEditorOpen(false)}
+            actions={<Button label="Save" onPress={handleSaveField} />}
+          />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Field
+                label="Field name"
+                value={fieldLabel}
+                onChangeText={(text) => {
+                  setFieldLabel(text);
+                  if (text.trim()) setFieldError(null);
+                }}
+                placeholder="e.g. Warranty ends, Claim reference"
+                error={fieldError}
+                required
+              />
+
+              <OptionRow
+                label="Type"
+                options={[
+                  { value: "text" as CustomFieldType, label: "Text" },
+                  { value: "number" as CustomFieldType, label: "Number" },
+                  { value: "date" as CustomFieldType, label: "Date" },
+                ]}
+                value={fieldType}
+                onChange={setFieldType}
+                hint="The type decides which keyboard opens for this field."
+              />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* --- Restore from a picked file --- */}
+      <Modal
+        visible={pickedArchive !== null}
+        animationType="slide"
+        onRequestClose={() => setPickedArchive(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <AppBar title="Restore from a file" onBack={() => setPickedArchive(null)} />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {pickedArchive ? (
+                <View
+                  style={{
+                    backgroundColor: colors.surfaceSunken,
+                    borderRadius: radius.card,
+                    padding: spacing.lg,
+                    gap: spacing.xs,
+                  }}
+                >
+                  <AppText role="label" tone="muted">
+                    CHOSEN FILE
+                  </AppText>
+                  <AppText role="smallStrong">{pickedArchive.name}</AppText>
+                  <AppText role="small" tone="muted">
+                    {formatBytes(pickedArchive.sizeBytes)}
+                  </AppText>
+                </View>
+              ) : null}
+
+              <Notice
+                tone="warning"
+                icon="warning"
+                body="Everything currently on this phone is replaced by what the archive contains. The file is checked, decrypted and every checksum verified before a single record is touched, so a wrong password or a file that is not a Keeptrail backup changes nothing."
+              />
+
+              <Field
+                label="Archive password"
+                value={restorePassword}
+                onChangeText={(text) => {
+                  setRestorePassword(text);
+                  if (text) setRestoreError(null);
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+                error={restoreError}
+                required
+              />
+
+              <Button
+                label="Restore from this file"
+                icon="restoreArchive"
+                fullWidth
+                busy={restoring}
+                onPress={handleRestorePicked}
               />
             </ScrollView>
           </KeyboardAvoidingView>

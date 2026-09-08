@@ -46,6 +46,7 @@ interface HomeScreenProps {
   onOpenCollection: (collectionId: string) => void;
   onOpenAllReceipts: () => void;
   onStartCapture: () => void;
+  onResumeDraft: (draftId: string) => void;
 }
 
 export function HomeScreen({
@@ -57,9 +58,10 @@ export function HomeScreen({
   onOpenCollection,
   onOpenAllReceipts,
   onStartCapture,
+  onResumeDraft,
 }: HomeScreenProps) {
   const { colors, spacing, radius, typography, mode, setMode, isDark } = useTheme();
-  const { vault, receipts, collections, actions, stats, warning, loadSampleReceipts } =
+  const { vault, receipts, collections, actions, stats, warning, drafts, loadSampleReceipts } =
     useLocalVault();
   const contentInsets = useContentInsets();
   const [query, setQuery] = useState("");
@@ -122,6 +124,29 @@ export function HomeScreen({
     <View style={{ gap: spacing.lg }}>
       {warning ? (
         <Notice tone="danger" icon="warning" title="Heads up about storage" body={warning} />
+      ) : null}
+
+      {/* A capture interrupted by the OS is offered back before anything else:
+          the work is already on disk and the user did not choose to lose it. */}
+      {drafts.length > 0 ? (
+        <Card
+          onPress={() => onResumeDraft(drafts[0]!.id)}
+          accessibilityLabel="Unfinished receipt"
+          accessibilityHint="Reopens the receipt you were adding"
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <Icon name="edit" size={22} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <AppText role="bodyStrong">Unfinished receipt</AppText>
+              <AppText role="small" tone="secondary">
+                {drafts[0]?.merchant?.trim()
+                  ? `You were adding "${drafts[0].merchant.trim()}". Nothing was lost.`
+                  : "You were adding a receipt when the app closed. Nothing was lost."}
+              </AppText>
+            </View>
+            <Icon name="chevron" size={20} color={colors.textMuted} />
+          </View>
+        </Card>
       ) : null}
 
       {/* Search is the first control because retrieval is the product's verb. */}

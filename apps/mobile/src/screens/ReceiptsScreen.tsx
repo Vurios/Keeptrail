@@ -45,6 +45,7 @@ import {
   Notice,
   OptionRow,
   StatusBadge,
+  TagEditor,
   useContentInsets,
 } from "../components/primitives";
 import { Icon } from "../components/Icon";
@@ -75,6 +76,8 @@ interface EditorState {
   purpose: string;
   notes: string;
   collectionIds: string[];
+  tags: string[];
+  customValues: Record<string, string>;
   reviewStatus: ReviewStatus;
 }
 
@@ -88,6 +91,8 @@ function toEditorState(receipt: ReceiptRecord): EditorState {
     purpose: receipt.purpose ?? "",
     notes: receipt.notes ?? "",
     collectionIds: [...receipt.collection_ids],
+    tags: [...receipt.tags],
+    customValues: { ...receipt.custom_fields },
     reviewStatus: receipt.review_status,
   };
 }
@@ -102,7 +107,9 @@ function statesDiffer(a: EditorState, b: EditorState): boolean {
     a.purpose !== b.purpose ||
     a.notes !== b.notes ||
     a.reviewStatus !== b.reviewStatus ||
-    a.collectionIds.slice().sort().join(",") !== b.collectionIds.slice().sort().join(",")
+    a.collectionIds.slice().sort().join(",") !== b.collectionIds.slice().sort().join(",") ||
+    a.tags.slice().sort().join(",") !== b.tags.slice().sort().join(",") ||
+    JSON.stringify(a.customValues) !== JSON.stringify(b.customValues)
   );
 }
 
@@ -116,6 +123,10 @@ export function ReceiptsScreen({
     vault,
     receipts,
     collections,
+    customFields,
+    tags: knownTags,
+    setReceiptTags,
+    setReceiptCustomFields,
     saveReceipt,
     setReceiptCollections,
     moveToTrash,
@@ -203,6 +214,16 @@ export function ReceiptsScreen({
     [receipts],
   );
 
+  /**
+   * Possible duplicates of the receipt being edited. Suggestions only — the
+   * blueprint is explicit that duplicate detection never deletes anything, so
+   * this surfaces the match and leaves both records in place.
+   */
+  const editorDuplicates = useMemo(
+    () => (editing ? vault.findDuplicatesOf(editing.id) : []),
+    [editing, vault, receipts],
+  );
+
   const editorAttachments = useMemo<AttachmentRecord[]>(
     () => (editing ? getAttachments(editing.id) : []),
     [editing, getAttachments],
@@ -278,11 +299,22 @@ export function ReceiptsScreen({
       review_status: draft.reviewStatus,
     });
     setReceiptCollections(editing.id, draft.collectionIds);
+    setReceiptTags(editing.id, draft.tags);
+    setReceiptCustomFields(editing.id, draft.customValues);
 
     haptics.success();
     showSnackbar({ message: "Receipt updated on this phone.", tone: "success" });
     closeEditor();
-  }, [editing, draft, saveReceipt, setReceiptCollections, showSnackbar, closeEditor]);
+  }, [
+    editing,
+    draft,
+    saveReceipt,
+    setReceiptCollections,
+    setReceiptTags,
+    setReceiptCustomFields,
+    showSnackbar,
+    closeEditor,
+  ]);
 
   const handleTrash = useCallback(
     (receipt: ReceiptRecord) => {
@@ -611,6 +643,39 @@ export function ReceiptsScreen({
                   )}
                 </View>
 
+                {editorDuplicates.length > 0 ? (
+                  <Notice
+                    tone="warning"
+                    icon="warning"
+                    title={
+                      editorDuplicates[0]?.confidence === "identical_file"
+                        ? "You already have this exact file"
+                        : "This may be a duplicate"
+                    }
+                    body={`${
+                      editorDuplicates[0]?.reason ?? ""
+                    } Both receipts are still here — Keeptrail never deletes one for you. Open Trash-worthy duplicates yourself if you want to remove one.`}
+                    action={
+                      <View style={{ marginTop: spacing.sm, alignSelf: "flex-start" }}>
+                        <Button
+                          label="Show the other receipt"
+                          variant="tonal"
+                          icon="receipts"
+                          onPress={() => {
+                            const other = editorDuplicates[0]
+                              ? vault.getReceipt(editorDuplicates[0].candidateId)
+                              : null;
+                            if (other) {
+                              closeEditor();
+                              openEditor(other);
+                            }
+                          }}
+                        />
+                      </View>
+                    }
+                  />
+                ) : null}
+
                 {draft.reviewStatus !== "reviewed" ? (
                   <Notice
                     tone="warning"
@@ -704,6 +769,12 @@ export function ReceiptsScreen({
                   </View>
                 </View>
 
+                <TagEditor
+                  tags={draft.tags}
+                  onChange={(tags) => updateDraft({ tags })}
+                  suggestions={knownTags.map((entry) => entry.tag)}
+                />
+
                 <Field
                   label="What is this for?"
                   value={draft.purpose}
@@ -719,6 +790,34 @@ export function ReceiptsScreen({
                   placeholder="Claim reference, warranty terms, anything else"
                   multiline
                 />
+
+                {customFields.length > 0 ? (
+                  <View style={{ gap: spacing.lg }}>
+                    <Divider />
+                    {customFields.map((definition) => (
+                      <Field
+                        key={definition.id}
+                        label={definition.label}
+                        value={draft.customValues[definition.id] ?? ""}
+                        onChangeText={(text) =>
+                          updateDraft({
+                            customValues: { ...draft.customValues, [definition.id]: text },
+                          })
+                        }
+                        placeholder={
+                          definition.field_type === "date"
+                            ? "YYYY-MM-DD"
+                            : definition.field_type === "number"
+                              ? "0"
+                              : ""
+                        }
+                        keyboardType={
+                          definition.field_type === "number" ? "decimal-pad" : "default"
+                        }
+                      />
+                    ))}
+                  </View>
+                ) : null}
 
                 <Divider />
 
