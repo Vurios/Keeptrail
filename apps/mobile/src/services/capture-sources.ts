@@ -13,6 +13,7 @@
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
+import { Linking } from "react-native";
 
 export type CaptureSource = "camera" | "gallery" | "file";
 
@@ -154,7 +155,13 @@ export async function captureFromFiles(): Promise<CaptureResult> {
   }
 }
 
-/** Human-readable explanation for a denied permission, with the way forward. */
+/**
+ * Human-readable explanation for a denied permission.
+ *
+ * When Android will no longer show the prompt the only route is the system
+ * settings page, so callers pair this with `openAppSettings` rather than
+ * telling the user to go and find it themselves.
+ */
 export function permissionDeniedMessage(result: {
   source: CaptureSource;
   canAskAgain: boolean;
@@ -163,4 +170,9 @@ export function permissionDeniedMessage(result: {
   return result.canAskAgain
     ? `Keeptrail needs access to ${what} for this. You can still choose a photo or type the receipt in by hand.`
     : `Access to ${what} is turned off for Keeptrail in Android settings. You can still choose a photo or type the receipt in by hand.`;
+}
+
+/** Opens this app's page in Android settings, for a permanently denied permission. */
+export async function openAppSettings(): Promise<void> {
+  await Linking.openSettings();
 }

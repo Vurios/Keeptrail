@@ -28,6 +28,7 @@ import {
   type ListRenderItemInfo,
   type TextStyle,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AssistantResponse, ReceiptRecord } from "@katibay/shared";
 
 import { useTheme } from "../theme/ThemeContext";
@@ -74,7 +75,8 @@ const INTRO: ChatMessage = {
 };
 
 export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreenProps) {
-  const { colors, spacing, radius, typography } = useTheme();
+  const { colors, spacing, radius, typography, reduceMotion } = useTheme();
+  const insets = useSafeAreaInsets();
   const { queryAssistant, vault, receipts } = useLocalVault();
 
   const [messages, setMessages] = useState<ChatMessage[]>([INTRO]);
@@ -83,8 +85,8 @@ export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreen
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const scrollToEnd = useCallback(() => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-  }, []);
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: !reduceMotion }));
+  }, [reduceMotion]);
 
   const send = useCallback(
     async (raw?: string) => {
@@ -149,7 +151,11 @@ export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreen
                 paddingVertical: spacing.md,
               }}
             >
-              <AppText role="body" style={{ color: colors.onPrimaryContainer }}>
+              <AppText
+                role="body"
+                style={{ color: colors.onPrimaryContainer }}
+                accessibilityLabel={`You asked: ${item.text}`}
+              >
                 {item.text}
               </AppText>
             </View>
@@ -196,7 +202,9 @@ export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreen
               paddingVertical: spacing.md,
             }}
           >
-            <AppText role="body">{item.text}</AppText>
+            <AppText role="body" accessibilityLabel={`Keeptrail answered: ${item.text}`}>
+              {item.text}
+            </AppText>
           </View>
 
           {/* The number is rendered from the structured result, so what the
@@ -345,7 +353,7 @@ export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreen
             gap: spacing.sm,
             paddingHorizontal: spacing.gutter,
             paddingTop: spacing.sm,
-            paddingBottom: spacing.lg,
+            paddingBottom: spacing.lg + insets.bottom,
             borderTopWidth: 1,
             borderTopColor: colors.divider,
             backgroundColor: colors.surface,
@@ -370,7 +378,7 @@ export function AskKeeptrailScreen({ onBack, onOpenReceipt }: AskKeeptrailScreen
                 paddingHorizontal: spacing.md,
                 paddingVertical: spacing.md,
                 minHeight: spacing.touch,
-                maxHeight: 120,
+                maxHeight: typography.body.lineHeight * 5,
               },
             ]}
           />

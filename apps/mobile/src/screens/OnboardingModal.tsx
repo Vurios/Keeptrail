@@ -10,12 +10,14 @@
  * breaching the rule "Never seed fake receipts into real totals". Sample data
  * is now an explicit, clearly labelled, disposable choice on the last step.
  *
- * No permission is requested here. §7 requires camera and notification prompts
- * at the relevant action, and this build asks for neither.
+ * No permission is requested here. §7 requires camera and notification prompts at
+ * the relevant action: the camera prompt lives in the capture flow, and the
+ * notification prompt fires when the user saves their first reminder.
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Modal, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "../theme/ThemeContext";
 import { useLocalVault } from "../vault-context";
@@ -46,8 +48,8 @@ const STEPS: Step[] = [
     body: "Save a receipt with the reason you kept it, and it stays findable — by merchant, by an item printed on it, or by the note you wrote.",
     points: [
       "Warranty proof, reimbursements, returns, anything you may need to produce later",
-      "Type a receipt in by hand, or run the worked scan example to see how review works",
-      "Camera and gallery capture are not in this build yet",
+      "Photograph a receipt, pick one from your gallery, import a PDF, or type it in",
+      "Keeptrail asks for the camera only at the moment you choose to use it",
     ],
   },
   {
@@ -75,10 +77,18 @@ const STEPS: Step[] = [
 ];
 
 export function OnboardingModal({ visible, onClose, onStartCapture }: OnboardingModalProps) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
   const { loadSampleReceipts, receipts } = useLocalVault();
   const { showSnackbar } = useSnackbar();
   const [index, setIndex] = useState(0);
+
+  // Reopening the guide starts at the beginning. Without this the modal keeps
+  // the index it closed on, so a user who finished it once can never see the
+  // first two steps again.
+  useEffect(() => {
+    if (visible) setIndex(0);
+  }, [visible]);
 
   const step = STEPS[index];
   const isLast = index === STEPS.length - 1;
@@ -133,14 +143,15 @@ export function OnboardingModal({ visible, onClose, onStartCapture }: Onboarding
             style={{ flexDirection: "row", gap: spacing.xs }}
             accessibilityRole="progressbar"
             accessibilityLabel={`Step ${index + 1} of ${STEPS.length}`}
+            accessibilityValue={{ min: 1, max: STEPS.length, now: index + 1 }}
           >
             {STEPS.map((entry, position) => (
               <View
                 key={entry.key}
                 style={{
                   flex: 1,
-                  height: 4,
-                  borderRadius: 2,
+                  height: spacing.xs,
+                  borderRadius: spacing.xxs,
                   backgroundColor: position <= index ? colors.primary : colors.divider,
                 }}
               />
@@ -160,11 +171,11 @@ export function OnboardingModal({ visible, onClose, onStartCapture }: Onboarding
               <View key={point} style={{ flexDirection: "row", gap: spacing.md }}>
                 <View
                   style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
+                    width: spacing.sm - spacing.xxs,
+                    height: spacing.sm - spacing.xxs,
+                    borderRadius: spacing.xs,
                     backgroundColor: colors.textMuted,
-                    marginTop: 9,
+                    marginTop: spacing.sm,
                   }}
                 />
                 <AppText role="small" tone="secondary" style={{ flex: 1 }}>
@@ -188,6 +199,7 @@ export function OnboardingModal({ visible, onClose, onStartCapture }: Onboarding
           style={{
             gap: spacing.sm,
             padding: spacing.gutter,
+            paddingBottom: spacing.gutter + insets.bottom,
             borderTopWidth: 1,
             borderTopColor: colors.divider,
             backgroundColor: colors.surface,

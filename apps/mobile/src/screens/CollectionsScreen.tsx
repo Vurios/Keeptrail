@@ -164,72 +164,82 @@ export function CollectionsScreen({ onOpenCollection, onOpenUnfiled }: Collectio
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<CollectionSummary>) => (
-      <Card
-        onPress={() => onOpenCollection(item.collection.id)}
-        accessibilityLabel={`${item.collection.name}, ${item.receiptCount} receipts`}
-        accessibilityHint="Opens these receipts in the Receipts tab"
-      >
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.md }}>
-          {/* A colour bar rather than an icon in a circle: it identifies the
+      <View style={{ gap: spacing.xs }}>
+        <Card
+          onPress={() => onOpenCollection(item.collection.id)}
+          accessibilityLabel={`${item.collection.name}, ${item.receiptCount} receipts`}
+          accessibilityHint="Opens these receipts in the Receipts tab"
+        >
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.md }}>
+            {/* A colour bar rather than an icon in a circle: it identifies the
               collection without pretending to be a button. */}
-          <View
-            style={{
-              width: 4,
-              alignSelf: "stretch",
-              minHeight: 40,
-              borderRadius: 2,
-              backgroundColor: item.collection.color,
-            }}
-          />
-
-          <View style={{ flex: 1, gap: spacing.xs }}>
-            <AppText role="bodyStrong" numberOfLines={1}>
-              {item.collection.name}
-            </AppText>
-            {item.collection.description ? (
-              <AppText role="small" tone="secondary" numberOfLines={2}>
-                {item.collection.description}
-              </AppText>
-            ) : null}
-
             <View
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: spacing.sm,
-                flexWrap: "wrap",
-                marginTop: spacing.xxs,
+                width: spacing.xs,
+                alignSelf: "stretch",
+                minHeight: spacing.xxl + spacing.lg,
+                borderRadius: spacing.xxs,
+                backgroundColor: item.collection.color,
               }}
-            >
-              <AppText role="small" tone="muted">
-                {item.receiptCount} receipt{item.receiptCount === 1 ? "" : "s"}
+            />
+
+            <View style={{ flex: 1, gap: spacing.xs }}>
+              <AppText role="bodyStrong" numberOfLines={1}>
+                {item.collection.name}
               </AppText>
-              {item.unreviewedCount > 0 ? (
-                <AppText role="small" style={{ color: colors.status.warning.text }}>
-                  {item.unreviewedCount} to review
+              {item.collection.description ? (
+                <AppText role="small" tone="secondary" numberOfLines={2}>
+                  {item.collection.description}
                 </AppText>
               ) : null}
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  flexWrap: "wrap",
+                  marginTop: spacing.xxs,
+                }}
+              >
+                <AppText role="small" tone="muted">
+                  {item.receiptCount} receipt{item.receiptCount === 1 ? "" : "s"}
+                </AppText>
+                {item.unreviewedCount > 0 ? (
+                  <AppText role="small" style={{ color: colors.status.warning.text }}>
+                    {item.unreviewedCount} to review
+                  </AppText>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={{ alignItems: "flex-end", gap: spacing.xs }}>
+              {item.totals.length === 0 ? (
+                <AppText role="small" tone="muted">
+                  No amounts
+                </AppText>
+              ) : (
+                item.totals.map((total) => (
+                  <Money key={total.currency} formatted={total.formatted} tone="accent" />
+                ))
+              )}
             </View>
           </View>
-
-          <View style={{ alignItems: "flex-end", gap: spacing.xs }}>
-            {item.totals.length === 0 ? (
-              <AppText role="small" tone="muted">
-                No amounts
-              </AppText>
-            ) : (
-              item.totals.map((total) => (
-                <Money key={total.currency} formatted={total.formatted} tone="accent" />
-              ))
-            )}
-            <IconButton
-              icon="edit"
-              label={`Edit ${item.collection.name}`}
-              onPress={() => openEdit(item.collection)}
-            />
-          </View>
+        </Card>
+        {/* Edit sits outside the pressable card: a Pressable collapses its
+          subtree into a single accessibility node on Android, which made this
+          control unreachable to TalkBack — and it is the only way to rename or
+          recolour a collection. */}
+        <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+          <Button
+            label="Edit"
+            variant="text"
+            icon="edit"
+            onPress={() => openEdit(item.collection)}
+            accessibilityHint={`Rename or recolour ${item.collection.name}`}
+          />
         </View>
-      </Card>
+      </View>
     ),
     [spacing, colors, onOpenCollection, openEdit],
   );
@@ -371,7 +381,9 @@ export function CollectionsScreen({ onOpenCollection, onOpenUnfiled }: Collectio
                         >
                           {/* Selection is shown by a mark as well as by colour,
                               so it does not depend on colour perception. */}
-                          {selected ? <Icon name="check" size={14} color="#FFFFFF" /> : null}
+                          {selected ? (
+                            <Icon name="check" size={14} color={colors.onPrimary} />
+                          ) : null}
                         </View>
                       </Pressable>
                     );

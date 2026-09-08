@@ -15,6 +15,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { CustomFieldType } from "@katibay/shared";
 import { useTheme } from "../theme/ThemeContext";
@@ -83,12 +84,14 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
   } = useLocalVault();
   const { showSnackbar } = useSnackbar();
   const contentInsets = useContentInsets();
+  const insets = useSafeAreaInsets();
 
   const [archives, setArchives] = useState<BackupArchiveInfo[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const [restoreTarget, setRestoreTarget] = useState<BackupArchiveInfo | null>(null);
@@ -126,6 +129,7 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
     setPassword("");
     setConfirmPassword("");
     setPasswordError(null);
+    setConfirmError(null);
   }, []);
 
   const handleExport = useCallback(() => {
@@ -138,7 +142,7 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
     }
     // A single blind entry for a key that can never be recovered is a trap.
     if (password !== confirmPassword) {
-      setPasswordError("The two passwords do not match.");
+      setConfirmError("The two passwords do not match.");
       haptics.error();
       return;
     }
@@ -575,52 +579,68 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             <View style={{ gap: spacing.sm }}>
               {archives.map((archive) => (
                 <Card key={archive.uri}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-                    <Icon name="storage" size={20} color={colors.textSecondary} />
-                    <View style={{ flex: 1 }}>
-                      <AppText role="smallStrong" numberOfLines={1}>
-                        {archive.name}
-                      </AppText>
-                      <AppText role="small" tone="muted">
-                        {formatBytes(archive.sizeBytes)}
-                      </AppText>
+                  {/* Name on its own line: three actions plus a filename in one
+                      row overflowed a 360dp screen before any font scaling. */}
+                  <View style={{ gap: spacing.md }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                      <Icon name="storage" size={20} color={colors.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <AppText role="smallStrong" numberOfLines={1}>
+                          {archive.name}
+                        </AppText>
+                        <AppText role="small" tone="muted">
+                          {formatBytes(archive.sizeBytes)}
+                        </AppText>
+                      </View>
                     </View>
-                    <Button
-                      label="Send"
-                      variant="tonal"
-                      icon="backup"
-                      onPress={() => handleShareArchive(archive)}
-                      accessibilityHint="Copies this archive off the phone using the share sheet"
-                    />
-                    <Button
-                      label="Restore"
-                      variant="outlined"
-                      icon="restoreArchive"
-                      onPress={() => confirmRestore(archive)}
-                    />
-                    <IconButton
-                      icon="trash"
-                      tone="danger"
-                      label={`Delete backup ${archive.name}`}
-                      onPress={() =>
-                        Alert.alert(
-                          "Delete this backup file?",
-                          "Your receipts stay on the phone. Only this archive is removed.",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Delete",
-                              style: "destructive",
-                              onPress: () => {
-                                deleteBackupArchive(archive.uri);
-                                refreshArchives();
-                                showSnackbar({ message: "Backup file deleted.", tone: "warning" });
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: spacing.sm,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        label="Send"
+                        variant="tonal"
+                        icon="backup"
+                        onPress={() => handleShareArchive(archive)}
+                        accessibilityHint="Copies this archive off the phone using the share sheet"
+                      />
+                      <Button
+                        label="Restore"
+                        variant="outlined"
+                        icon="restoreArchive"
+                        onPress={() => confirmRestore(archive)}
+                      />
+                      <IconButton
+                        icon="trash"
+                        tone="danger"
+                        label={`Delete backup ${archive.name}`}
+                        onPress={() =>
+                          Alert.alert(
+                            "Delete this backup file?",
+                            "Your receipts stay on the phone. Only this archive is removed.",
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Delete",
+                                style: "destructive",
+                                onPress: () => {
+                                  deleteBackupArchive(archive.uri);
+                                  refreshArchives();
+                                  showSnackbar({
+                                    message: "Backup file deleted.",
+                                    tone: "warning",
+                                  });
+                                },
                               },
-                            },
-                          ],
-                        )
-                      }
-                    />
+                            ],
+                          )
+                        }
+                      />
+                    </View>
                   </View>
                 </Card>
               ))}
@@ -813,7 +833,11 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             behavior={Platform.OS === "ios" ? "padding" : "height"}
           >
             <ScrollView
-              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              contentContainerStyle={{
+                padding: spacing.gutter,
+                paddingBottom: spacing.gutter + insets.bottom + spacing.xl,
+                gap: spacing.lg,
+              }}
               keyboardShouldPersistTaps="handled"
             >
               <Notice
@@ -829,10 +853,12 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                 onChangeText={(text) => {
                   setPassword(text);
                   if (text.length >= MIN_PASSWORD_LENGTH) setPasswordError(null);
+                  if (text === confirmPassword) setConfirmError(null);
                 }}
                 secureTextEntry
                 autoCapitalize="none"
                 placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                error={passwordError}
                 required
               />
 
@@ -841,11 +867,11 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                 value={confirmPassword}
                 onChangeText={(text) => {
                   setConfirmPassword(text);
-                  if (text === password) setPasswordError(null);
+                  if (text === password) setConfirmError(null);
                 }}
                 secureTextEntry
                 autoCapitalize="none"
-                error={passwordError}
+                error={confirmError}
                 required
               />
 
@@ -882,7 +908,11 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             behavior={Platform.OS === "ios" ? "padding" : "height"}
           >
             <ScrollView
-              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              contentContainerStyle={{
+                padding: spacing.gutter,
+                paddingBottom: spacing.gutter + insets.bottom + spacing.xl,
+                gap: spacing.lg,
+              }}
               keyboardShouldPersistTaps="handled"
             >
               <Field
@@ -926,7 +956,11 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             behavior={Platform.OS === "ios" ? "padding" : "height"}
           >
             <ScrollView
-              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              contentContainerStyle={{
+                padding: spacing.gutter,
+                paddingBottom: spacing.gutter + insets.bottom + spacing.xl,
+                gap: spacing.lg,
+              }}
               keyboardShouldPersistTaps="handled"
             >
               {pickedArchive ? (
@@ -992,7 +1026,11 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
             behavior={Platform.OS === "ios" ? "padding" : "height"}
           >
             <ScrollView
-              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              contentContainerStyle={{
+                padding: spacing.gutter,
+                paddingBottom: spacing.gutter + insets.bottom + spacing.xl,
+                gap: spacing.lg,
+              }}
               keyboardShouldPersistTaps="handled"
             >
               {restoreTarget ? (

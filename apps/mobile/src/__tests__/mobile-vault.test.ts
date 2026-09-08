@@ -12,8 +12,10 @@ import {
 
 describe("Mobile App Theme & Accessibility Tokens", () => {
   it("enforces minimum touch target of 48 logical units for all controls", () => {
-    expect(spacing.thumb).toBeGreaterThanOrEqual(48);
-    expect(spacing.buttonHeight).toBeGreaterThanOrEqual(48);
+    expect(spacing.touch).toBeGreaterThanOrEqual(48);
+    expect(spacing.control).toBeGreaterThanOrEqual(48);
+    // The FAB must clear the tab bar rather than overlap its last tab.
+    expect(spacing.fab + spacing.lg).toBeLessThanOrEqual(spacing.navBar + spacing.fab);
   });
 
   it("contains complete light and dark palette definitions", () => {

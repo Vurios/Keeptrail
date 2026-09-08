@@ -132,11 +132,14 @@ export const spacing = {
   xxxl: 32,
   gutter: 20,
   section: 32,
+  /** Minimum interactive size. Every pressable satisfies this. */
   touch: 48,
-  thumb: 48,
+  /** Primary button height. */
   control: 52,
-  buttonHeight: 52,
-  shutter: 72,
+  /** Material standard FAB. */
+  fab: 56,
+  /** Bottom navigation height above the system inset. The FAB clears this. */
+  navBar: 60,
 } as const;
 
 export const radius = {

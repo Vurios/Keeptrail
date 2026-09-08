@@ -28,7 +28,7 @@ const ONBOARDING_VERSION = "1";
 type Overlay = "none" | "ask" | "vault";
 
 function MainApp() {
-  const { colors, spacing, elevation, isDark } = useTheme();
+  const { colors, spacing, radius, elevation, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<TabKey>("home");
@@ -191,10 +191,13 @@ function MainApp() {
             style={({ pressed }) => ({
               position: "absolute",
               right: spacing.gutter + insets.right,
-              bottom: insets.bottom + spacing.xxxl + spacing.xl,
-              width: 56,
-              height: 56,
-              borderRadius: 16,
+              // Clears the tab bar plus the Material 16dp gap. The previous
+              // arithmetic left the FAB overlapping the bar, so it swallowed
+              // taps meant for the last tab.
+              bottom: insets.bottom + spacing.navBar + spacing.lg,
+              width: spacing.fab,
+              height: spacing.fab,
+              borderRadius: radius.card,
               backgroundColor: colors.primary,
               alignItems: "center",
               justifyContent: "center",

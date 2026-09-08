@@ -161,11 +161,48 @@ describe("no sync or account vocabulary survives in the local variant", () => {
 describe("the Android manifest matches the local-only promise", () => {
   const MANIFEST = resolve(__dirname, "../../android/app/src/main/AndroidManifest.xml");
 
-  it("requests no overlay or legacy storage permission", () => {
+  /**
+   * Expo's prebuild expresses a blocked permission as a declaration carrying
+   * `tools:node="remove"`, which the manifest merger strips from the final
+   * merged manifest. Asserting the string is simply absent would therefore be
+   * wrong — what matters is that every one of these is either missing or
+   * explicitly removed, and that none is left as a live request.
+   */
+  const REMOVED_PERMISSIONS = [
+    // No network code ships, so the OS should not even grant the capability.
+    "android.permission.INTERNET",
+    // expo-image-picker declares this for video; Keeptrail never records audio.
+    "android.permission.RECORD_AUDIO",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+  ];
+
+  it.each(REMOVED_PERMISSIONS)("does not request %s", (permission) => {
     const manifest = read(MANIFEST);
-    expect(manifest).not.toContain("SYSTEM_ALERT_WINDOW");
-    expect(manifest).not.toContain("READ_EXTERNAL_STORAGE");
-    expect(manifest).not.toContain("WRITE_EXTERNAL_STORAGE");
+    const declaration = new RegExp(
+      `<uses-permission[^>]*android:name="${permission.replace(/\./g, ".")}"[^>]*/>`,
+    );
+    const match = manifest.match(declaration);
+    if (!match) return; // Never declared at all: also correct.
+    expect(match[0]).toContain('tools:node="remove"');
+  });
+
+  it("requests only the permissions a shipped feature uses", () => {
+    const manifest = read(MANIFEST);
+    const live = Array.from(
+      manifest.matchAll(/<uses-permission android:name="([^"]+)"\s*\/>/g),
+      (match) => match[1],
+    );
+    expect(live.sort()).toEqual([
+      // Photo capture.
+      "android.permission.CAMERA",
+      // Reminder notifications.
+      "android.permission.POST_NOTIFICATIONS",
+      "android.permission.SCHEDULE_EXACT_ALARM",
+      // Haptic feedback.
+      "android.permission.VIBRATE",
+    ]);
   });
 
   it("keeps private records out of Android's automatic cloud backup", () => {

@@ -446,7 +446,7 @@ export function ReceiptsScreen({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Filter by merchant, note or scanned text"
+            placeholder="Filter by merchant, note or text on the receipt"
             placeholderTextColor={colors.textMuted}
             accessibilityLabel="Filter receipts"
             style={[typography.body, { flex: 1, color: colors.textPrimary, paddingVertical: 0 }]}
@@ -681,7 +681,7 @@ export function ReceiptsScreen({
                     tone="warning"
                     icon="needsReview"
                     title="Confirm the amount"
-                    body="These values came from a scan and have not been checked. Correct anything that is wrong, then mark the receipt reviewed."
+                    body="These values have not been confirmed yet. Correct anything that is wrong, then mark the receipt reviewed."
                   />
                 ) : null}
 

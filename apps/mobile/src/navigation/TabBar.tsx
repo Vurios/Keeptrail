@@ -68,7 +68,7 @@ export function TabBar({
   current: TabKey;
   onChange: (tab: TabKey) => void;
 }) {
-  const { colors, spacing, typography } = useTheme();
+  const { colors, spacing, radius, typography } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -97,18 +97,18 @@ export function TabBar({
             android_ripple={{ color: colors.scrim }}
             style={{
               flex: 1,
-              minHeight: spacing.touch + spacing.md,
+              minHeight: spacing.navBar,
               alignItems: "center",
               justifyContent: "center",
               paddingVertical: spacing.sm,
-              gap: 2,
+              gap: spacing.xxs,
             }}
           >
             <View
               style={{
                 paddingHorizontal: spacing.lg,
-                paddingVertical: 3,
-                borderRadius: 999,
+                paddingVertical: spacing.xxs,
+                borderRadius: radius.full,
                 backgroundColor: selected ? colors.primaryContainer : "transparent",
               }}
             >
@@ -120,12 +120,11 @@ export function TabBar({
             </View>
             <Text
               style={[
-                typography.label as TextStyle,
-                {
-                  color: selected ? colors.textPrimary : colors.textSecondary,
-                  letterSpacing: 0.2,
-                  textTransform: "none",
-                },
+                // `caption` rather than `label`: same 12/16 metrics without the
+                // uppercase tracking, so the tab name is not a seventh type step
+                // invented at the call site.
+                typography.caption as TextStyle,
+                { color: selected ? colors.textPrimary : colors.textSecondary },
               ]}
               maxFontSizeMultiplier={1.3}
               numberOfLines={1}

@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Linking,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -466,7 +467,7 @@ export function RemindersScreen({ onOpenReceipt }: RemindersScreenProps) {
               <Notice
                 tone="info"
                 icon="info"
-                body="Keeptrail keeps this list on your phone and shows it when you open the app. This build does not send push notifications."
+                body="Keeptrail notifies you at 9am on the due date. It asks for notification permission when you save this, and the reminder still appears in this list if you say no."
               />
 
               <Field
