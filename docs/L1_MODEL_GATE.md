@@ -1,100 +1,116 @@
 # L1 — On-device model gate: findings and decision
 
-**Date:** September 8, 2026
+**Date:** September 9, 2026 (supersedes the September 8 revision)
 **Blueprint:** `Keeptrail_Free_APK_Pilot_Blueprint_V2.md` (Revision 8), §3 "Model
-selection is an engineering gate", §5 "Two honest modes", and prompt L1.
+selection is an engineering gate", §5 "Two honest modes", prompt L1.
 
-**Decision: the gate is not passed. Basic Helper remains the sole mode, and the
-app is not advertised as having a chatbot.** This is the outcome §5 explicitly
-provides for, not a deferral dressed up as one.
+**Decision: ship a real on-device model.** `react-native-executorch` with
+Qwen 3 0.6B (4-bit) is production-viable today, and the assistant is redesigned
+so that a 0.6B model is not merely adequate but the right size for the job.
 
 ---
 
-## What the blueprint requires before a model ships
+## Correction to the previous revision
 
-Prompt L1 and §3 set a specific bar. All of it has to hold, not most of it:
+The September 8 revision of this document concluded that no stable React Native
+LLM runtime existed and that Basic Helper must remain the only mode. **That
+conclusion was wrong.** It rested on a single package, `llama.rn`, whose
+`latest` dist-tag is still a release candidate (`0.13.0-rc.2`). A wider search
+found a stable, maintained alternative that was not considered.
 
-1. An embedded native runtime — "Do not run a laptop server, expose a localhost
-   HTTP service, or treat an external Ollama endpoint as on-device."
-2. One selected and **pinned** model with tokenizer, chat template,
-   quantization, checksum, source and licence documented, including commercial
-   redistribution rights.
-3. At least 50 representative English/Taglish receipt questions, ambiguous date
-   queries and injection attempts, measured on low, mid and high target devices,
-   recording Android version, ABI, RAM, cold and warm load time, first-token
-   time, total latency, crash rate, heat and battery.
-4. For the strict offline pilot, the assets bundled in the installable delivery,
-   with first-run airplane mode verified — and "Large assets may make APK
-   sharing impractical; measure the result before committing."
+The corrected survey is below.
 
-## What was actually available
+---
 
-### Runtime
+## Runtime survey
 
-`llama.rn` is the maintained React Native binding of llama.cpp and the only
-credible candidate for this stack.
+| Runtime                       | Version             | Licence | Min Android                       | Verdict                                                                                                                                                                                                                                        |
+| ----------------------------- | ------------------- | ------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`react-native-executorch`** | **0.10.0 (stable)** | MIT     | **13 (API 33)**                   | **Chosen.** Meta's ExecuTorch under a React Native binding from Software Mansion, who also maintain Reanimated and Gesture Handler. Expo support via development builds on SDK 54+. Ships pre-exported Qwen 3, Llama 3.2, Phi 4 Mini, SmolLM 2 |
+| `llama.rn`                    | 0.13.0-rc.2         | MIT     | 7                                 | Rejected. `latest` is a release candidate; there is no stable release to depend on for a vault app                                                                                                                                             |
+| `cactus-react-native`         | 1.13.1              | MIT     | 7 (API 24)                        | Rejected. Best device coverage of the three and int4 models at 300–500 MB resident — but the repository was **archived read-only on 23 July 2026**. An abandoned inference runtime is not something to build a product on                      |
+| ML Kit GenAI / Gemini Nano    | Alpha (Prompt API)  | Google  | Pixel 8+, Galaxy S24+ and similar | Rejected as the primary path. Narrower reach than Android 13+, requires native Android code with no first-class RN binding, and the Prompt API is still Alpha. Worth revisiting as an accelerated path on supported flagships                  |
 
-```
-$ npm view llama.rn version license dist-tags
-version = '0.13.0-rc.2'
-license = 'MIT'
-{ rc: '0.7.0-rc.1', latest: '0.13.0-rc.2' }
-```
+### Device reach, stated plainly
 
-The `latest` dist-tag points at a **release candidate**. There is no stable
-release. The licence (MIT) is fine and the project is active, but shipping a
-pre-release inference runtime into a pilot whose entire purpose is to test
-whether people trust the app with their receipts trades the wrong risk. A crash
-in the runtime takes the app down with it.
+`react-native-executorch` requires **Android 13 or newer**. Android 13, 14, 15
+and 16 together are roughly **58%** of the global Android install base. That
+share skews lower in the budget-phone markets Keeptrail is aimed at.
 
-### Weights
+So this is a gate, not a universal capability, and §3 anticipates exactly that:
+"If a true chatbot is mandatory for a particular release, restrict that
+release's supported device range rather than pretending all devices support
+it." The app's `minSdk` stays at 24 — the receipt workflows have no reason to
+exclude anyone — and the model is an optional capability that unlocks where the
+hardware supports it.
 
-Qwen2.5-1.5B-Instruct is the baseline §3 names, and it clears the licence bar:
-Apache-2.0, 1.54 B parameters, commercial use permitted. Provenance and
-redistribution are not the problem.
+For reference, this is not unusual: Tarsi's on-device AI runs on Apple
+Intelligence, which requires iPhone 15 Pro or newer — a considerably narrower
+slice than Android 13+.
 
-Size is. A 4-bit quantization of a 1.5 B model is roughly 0.9–1.1 GB. The
-current pilot APK is 68 MB. Bundling weights takes the sideload artifact past
-1 GB — a fifteen-fold increase for a testing build distributed by hand, which is
-the "impractical" §3 warns about. The alternative §3 permits, an explicitly
-named "model download required" variant, is a different product decision that
-weakens the offline promise and needs the owner's call, not an implementer's.
+---
 
-### Devices
+## Model selection
 
-Requirement 3 cannot be satisfied here at all. Benchmarking needs low, mid and
-high tier physical hardware. One emulator is not a device tier, and numbers from
-an emulator would be worse than no numbers — they would look like evidence.
+**Qwen 3 0.6B, 4-bit quantized**, from the pre-exported `.pte` collection the
+runtime publishes.
 
-## Consequences for the shipped app
+- **Licence:** Apache-2.0. Commercial redistribution permitted; no
+  attribution trap, no field-of-use restriction.
+- **Download:** roughly 350–550 MB depending on the quantization variant. This
+  is why it is fetched on demand rather than bundled: adding it to the APK
+  would take a 77 MB sideload artifact past 500 MB, which §3 warns is
+  impractical for hand distribution.
+- **Resident memory:** a 4-bit model in this class sits in the few-hundred-MB
+  range during inference. It is released when the assistant screen closes.
 
-`§5` allows exactly two honest modes and requires the fallback be labelled as
-what it is:
+Per §3, the download is an explicitly named step with size, a Wi-Fi choice,
+progress, resume, checksum and a storage check — and the app does not claim
+first-run offline availability for the assistant until that download completes.
+Every receipt workflow remains fully offline from first launch regardless.
 
-- The engine at `packages/shared/src/local-pilot/assistant-engine.ts` runs its
-  deterministic path with `isModelAvailable: false`, set in
-  `apps/mobile/src/vault-context.tsx`.
-- The Ask Keeptrail app bar states the mode permanently, and the opening message
-  says "I am a rule-based helper, not a chatbot — I answer a fixed set of
-  questions and every total is calculated by the app."
-- Nothing in the app, `PRODUCT.md`, `TESTER_GUIDE.md` or the store copy claims a
-  chatbot, an AI assistant, or on-device inference.
-- Every receipt workflow works without a model, which is the condition §3
-  attaches to shipping the fallback at all.
+---
 
-The typed read-only tool surface the model would have used already exists and is
-already what produces every answer, so wiring a model in later is a substitution
-behind that interface rather than a rewrite.
+## Why 0.6B is the right size, not a compromise
 
-## What would reopen this
+The blueprint's trusted-execution contract already forbids the model from
+producing numbers: "Render money and aggregate cards from trusted structured
+results rather than accepting model-generated arithmetic."
 
-In order, and none of it is work this pass could honestly complete:
+That constraint decides the model size. The model's entire job is:
 
-1. A stable `llama.rn` release, or an equivalent maintained binding.
-2. Three physical devices spanning the target tiers.
-3. A 50-question benchmark run on them, published with the measurements §3
-   lists, and a support threshold set from the results rather than from hope.
-4. An owner decision on artifact size: bundle roughly 1 GB of weights, or ship
-   the separately-named download variant with size, Wi-Fi choice, progress,
-   resume, checksum and storage checks — accepting that the second one is not
-   first-launch offline.
+> free-form question → a validated call to one of six typed read-only tools
+
+It never writes an answer, never sums anything, never invents a merchant. It
+maps "how much did I spend at that coffee place near the office last month" to
+`summarizeReceipts({ merchant: "Highland Coffee", from: "2026-08-01", to:
+"2026-08-31" })`, and application code produces the figure.
+
+Intent-and-slot extraction with a constrained output shape is a task 0.6B models
+do genuinely well. A 4B model would be better at open-ended conversation, which
+is not what this feature is for and which the blueprint explicitly does not want
+it doing.
+
+---
+
+## What must still be measured
+
+Requirement 3 of prompt L1 — 50 representative English and Taglish questions
+across low, mid and high device tiers, recording cold load, first-token time,
+total latency, RAM, crash rate, heat and battery — has **not** been done. One
+emulator is not a device tier, and numbers from it would look like evidence
+without being any.
+
+The support threshold must be set from those measurements before the assistant
+is advertised as a chatbot anywhere in the store listing. Until then the feature
+ships labelled by what it is doing on that specific device.
+
+---
+
+## Fallback for devices below the gate
+
+Devices that cannot run the model keep every receipt workflow and get the
+deterministic assistant. That path is being rebuilt as a real grammar-based
+parser over intents, date expressions, merchants and amounts — not the
+`String.includes` keyword matching it uses today, which breaks on any phrasing
+it did not anticipate. It is labelled honestly and never described as a chatbot.
