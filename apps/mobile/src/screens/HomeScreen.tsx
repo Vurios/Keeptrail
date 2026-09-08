@@ -40,6 +40,7 @@ const RECENT_LIMIT = 8;
 interface HomeScreenProps {
   onOpenReceipt: (receipt: ReceiptRecord) => void;
   onOpenAsk: () => void;
+  onOpenVault: () => void;
   onOpenGuide: () => void;
   onOpenReviewQueue: () => void;
   onOpenCollection: (collectionId: string) => void;
@@ -50,6 +51,7 @@ interface HomeScreenProps {
 export function HomeScreen({
   onOpenReceipt,
   onOpenAsk,
+  onOpenVault,
   onOpenGuide,
   onOpenReviewQueue,
   onOpenCollection,
@@ -348,6 +350,7 @@ export function HomeScreen({
         actions={
           <>
             <IconButton icon="assistant" label="Ask Keeptrail" onPress={onOpenAsk} tone="primary" />
+            <IconButton icon="vault" label="Vault, storage and backup" onPress={onOpenVault} />
             <IconButton icon="guide" label="Open the guide" onPress={onOpenGuide} />
             <IconButton
               icon={isDark ? "light" : "dark"}

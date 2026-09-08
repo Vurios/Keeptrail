@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 import { Icon, type IconName } from "../components/Icon";
 
-export type TabKey = "home" | "receipts" | "reminders" | "vault";
+export type TabKey = "home" | "receipts" | "collections" | "reminders";
 
 interface TabDefinition {
   key: TabKey;
@@ -24,12 +24,11 @@ interface TabDefinition {
 }
 
 /**
- * Vault is a destination, not a header affordance. It holds the only controls
- * that decide whether a user's records survive, and it was previously reachable
- * from one badge on one screen.
+ * The four primary destinations the blueprint mandates. Collections is one of
+ * them, so it is a tab rather than a filter buried inside Receipts.
  *
- * Collections became a filter inside Receipts: a collection is a slice of the
- * receipt list, not a peer of it.
+ * Vault (storage and backup) is deliberately not a tab: it is a settings
+ * surface, reached from the Home app bar and from the backup reminder itself.
  */
 export const TABS: TabDefinition[] = [
   {
@@ -47,18 +46,18 @@ export const TABS: TabDefinition[] = [
     hint: "Every saved receipt, filtered by collection or review state",
   },
   {
+    key: "collections",
+    label: "Collections",
+    icon: "collection",
+    activeIcon: "collectionOpen",
+    hint: "Receipts grouped by what they are for",
+  },
+  {
     key: "reminders",
     label: "Reminders",
     icon: "reminders",
     activeIcon: "remindersActive",
     hint: "Return windows, refunds and reimbursement deadlines",
-  },
-  {
-    key: "vault",
-    label: "Vault",
-    icon: "vault",
-    activeIcon: "vaultActive",
-    hint: "Storage usage, encrypted backup and restore",
   },
 ];
 

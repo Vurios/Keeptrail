@@ -12,6 +12,7 @@ import { Icon } from "./src/components/Icon";
 import { TabBar, type TabKey } from "./src/navigation/TabBar";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { ReceiptsScreen } from "./src/screens/ReceiptsScreen";
+import { CollectionsScreen } from "./src/screens/CollectionsScreen";
 import { RemindersScreen } from "./src/screens/RemindersScreen";
 import { StorageBackupScreen } from "./src/screens/StorageBackupScreen";
 import { AskKeeptrailScreen } from "./src/screens/AskKeeptrailScreen";
@@ -23,7 +24,7 @@ const ONBOARDING_KEY = "keeptrail.onboarding.completedVersion";
 /** Bump to re-show onboarding after a change users need to see. */
 const ONBOARDING_VERSION = "1";
 
-type Overlay = "none" | "ask";
+type Overlay = "none" | "ask" | "vault";
 
 function MainApp() {
   const { colors, spacing, elevation, isDark } = useTheme();
@@ -36,6 +37,7 @@ function MainApp() {
   const [receiptsFilter, setReceiptsFilter] = useState<{
     collectionId?: string;
     reviewOnly?: boolean;
+    unfiledOnly?: boolean;
     focusReceiptId?: string;
   }>({});
 
@@ -84,6 +86,12 @@ function MainApp() {
     setTab("receipts");
   }, []);
 
+  const openUnfiled = useCallback(() => {
+    haptics.tap();
+    setReceiptsFilter({ unfiledOnly: true });
+    setTab("receipts");
+  }, []);
+
   // Hardware and gesture Back. Without this, Back inside an overlay closed the
   // whole app, and Back on any tab other than Home exited rather than returning
   // to the start destination.
@@ -111,6 +119,11 @@ function MainApp() {
       <View style={{ flex: 1 }}>
         {overlay === "ask" ? (
           <AskKeeptrailScreen onBack={() => setOverlay("none")} onOpenReceipt={openReceipt} />
+        ) : overlay === "vault" ? (
+          <StorageBackupScreen
+            onBack={() => setOverlay("none")}
+            onOpenAsk={() => setOverlay("ask")}
+          />
         ) : (
           <>
             {tab === "home" && (
@@ -119,6 +132,10 @@ function MainApp() {
                 onOpenAsk={() => {
                   haptics.tap();
                   setOverlay("ask");
+                }}
+                onOpenVault={() => {
+                  haptics.tap();
+                  setOverlay("vault");
                 }}
                 onOpenGuide={() => setOnboardingOpen(true)}
                 onOpenReviewQueue={openReviewQueue}
@@ -143,8 +160,10 @@ function MainApp() {
                 }}
               />
             )}
+            {tab === "collections" && (
+              <CollectionsScreen onOpenCollection={openCollection} onOpenUnfiled={openUnfiled} />
+            )}
             {tab === "reminders" && <RemindersScreen onOpenReceipt={openReceipt} />}
-            {tab === "vault" && <StorageBackupScreen onOpenAsk={() => setOverlay("ask")} />}
           </>
         )}
       </View>

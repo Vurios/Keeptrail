@@ -1,5 +1,15 @@
 # Keeptrail Tester Guide — Free Local Android APK Pilot
 
+> **This guide describes the v1.0.3 build, which is older than the current
+> source.** Substantial changes have landed since it was produced — durable
+> storage, corrected backup cryptography, a rebuilt navigation and design
+> system, and honest capture/reminder copy. Do not treat the download below as
+> representative of the current code, and do not publish a new guide until a new
+> signed APK has actually been built and its checksum recorded from the file.
+>
+> The v1.0.3 APK is **not present in `dist/`** in this working tree, so the
+> checksum and release links below could not be verified locally.
+
 **App:** Keeptrail
 **Package ID:** `com.keeptrail.app`
 **Version:** `1.0.3` (versionCode `4`)
@@ -41,7 +51,7 @@ Keeptrail is a free, 100% local Android receipt organizer designed to save paper
 ### Updating to a Newer APK Build
 
 - Install the new APK over the existing installation.
-- Your local receipts, attachments, collections, and settings are preserved in the private SQLite database across updates.
+- Your local receipts, attachments, collections and settings are preserved in the app's private vault across updates.
 - **Warning:** Do not uninstall the app to update, as Android removes app-private storage on uninstallation. Always export a `.keeptrail` backup before major updates.
 
 ---

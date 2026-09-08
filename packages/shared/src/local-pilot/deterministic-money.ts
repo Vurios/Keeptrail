@@ -1,6 +1,6 @@
 /**
  * Keeptrail Deterministic Money Tools
- * 
+ *
  * Rules:
  * 1. Money is integer minor units (e.g. cents, centavos). No floating-point rounding errors.
  * 2. Missing/unknown amounts stay null. Never convert unknown amounts to zero.
@@ -40,7 +40,7 @@ export const CURRENCY_MINOR_UNIT_DIGITS: Record<string, number> = {
  */
 export function formatMoney(
   minorUnits: number | null | undefined,
-  currency: string | null | undefined
+  currency: string | null | undefined,
 ): string {
   if (minorUnits === null || minorUnits === undefined) {
     return "Unknown";
@@ -69,14 +69,12 @@ export function formatMoney(
  */
 export function parseMoneyToMinorUnits(
   input: string | null | undefined,
-  currency: string = "PHP"
+  currency: string = "PHP",
 ): number | null {
   if (!input || !input.trim()) return null;
 
   // Clean currency symbols, commas, whitespace
-  const cleaned = input
-    .replace(/[^\d.-]/g, "")
-    .trim();
+  const cleaned = input.replace(/[^\d.-]/g, "").trim();
 
   if (!cleaned || isNaN(Number(cleaned))) return null;
 
@@ -99,7 +97,7 @@ export function calculateReceiptTotals(
   options?: {
     reviewedOnly?: boolean;
     excludeTrashed?: boolean;
-  }
+  },
 ): MultiCurrencySummary {
   const excludeTrashed = options?.excludeTrashed ?? true;
   const reviewedOnly = options?.reviewedOnly ?? false;

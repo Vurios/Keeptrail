@@ -8,7 +8,7 @@ android
 
 ## Stack
 
-React Native, Expo, TypeScript, Local SQLite Vault, On-Device OCR, AES-256-GCM Backup Encryption, Deterministic Money Engine. (Historical services/api Python backend and apps/web Next.js app preserved intact for future cloud evaluation).
+React Native, Expo, TypeScript, durable app-private file vault (versioned JSON index plus separate evidence files), on-device text extraction, AES-256-GCM backup encryption, deterministic money engine. (Historical services/api Python backend and apps/web Next.js app preserved intact for future cloud evaluation).
 
 ## Users
 
@@ -27,15 +27,15 @@ Unlike cloud tools that monetize personal financial transactions or require mont
 ## Operating Context
 
 - Android mobile devices running offline or online.
-- Camera captures, gallery photo imports, payment app screenshots, PDFs, and manual entries.
-- Private on-device SQLite database + byte-for-byte evidence file storage with SHA-256 integrity checksums.
+- Manual entry today. Camera capture, gallery import, Android Share and PDF handling are specified but not yet implemented.
+- Private on-device record index plus byte-for-byte evidence file storage with SHA-256 integrity checksums, written with staged crash-safe commits.
 - Encrypted password-protected `.keeptrail` backup containers (AES-256-GCM + PBKDF2).
 
 ## Core Capabilities and Constraints
 
 - **Private On-Device Vault:** All metadata and original receipt files remain strictly on the user's phone.
 - **Deterministic Money Tools:** Exact integer minor unit math; multi-currency segregation (never blends PHP, USD, etc.); CSV formula injection sanitization.
-- **On-Device OCR & Extraction:** Extracts merchant, date, amount, items, and flags ambiguous dates without cloud dependencies.
+- **On-Device Extraction:** Parses merchant, date, amount and flags ambiguous dates from receipt text without any cloud dependency. A bundled OCR engine that produces that text from a photo is not yet integrated.
 - **Portable Encrypted Backup (.keeptrail):** User-controlled AES-256-GCM archive with cryptographic manifest and file checksums.
 - **Ask Keeptrail (Local Assistant):** Read-only exploration tool with trusted deterministic calculation cards and honest Basic Helper labeling.
 - **Zero Cloud Leakage:** No background network calls for receipts, no third-party tracking, no cloud inference.

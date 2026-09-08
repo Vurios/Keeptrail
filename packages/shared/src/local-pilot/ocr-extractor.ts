@@ -1,6 +1,6 @@
 /**
  * Keeptrail On-Device Receipt Extractor
- * 
+ *
  * Rules:
  * 1. Receipt text is untrusted input.
  * 2. Missing facts remain null (never invent merchants, amounts, or policies).
@@ -79,10 +79,7 @@ export function extractReceiptFromText(rawText: string): ExtractedReceiptData {
     upperFullText.includes("SENT MONEY")
   ) {
     document_type = "payment_screenshot";
-  } else if (
-    upperFullText.includes("INVOICE") ||
-    upperFullText.includes("BILLING STATEMENT")
-  ) {
+  } else if (upperFullText.includes("INVOICE") || upperFullText.includes("BILLING STATEMENT")) {
     document_type = "invoice";
   } else if (
     upperFullText.includes("ORDER CONFIRMATION") ||
@@ -142,7 +139,9 @@ export function extractReceiptFromText(rawText: string): ExtractedReceiptData {
   if (isoMatch && isoMatch[1] && isoMatch[2] && isoMatch[3]) {
     transaction_date = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
   } else {
-    const slashMatch = rawText.match(/\b(0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])[-/.](20\d{2}|\d{2})\b/);
+    const slashMatch = rawText.match(
+      /\b(0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\d|3[01])[-/.](20\d{2}|\d{2})\b/,
+    );
     if (slashMatch && slashMatch[1] && slashMatch[2] && slashMatch[3]) {
       let year = slashMatch[3];
       if (year.length === 2) year = `20${year}`;
@@ -226,14 +225,8 @@ export function extractReceiptFromText(rawText: string): ExtractedReceiptData {
 
   // 6. Arithmetic Validation (if subtotal, tax, and total exist)
   let arithmetic_matches: boolean | null = null;
-  if (
-    total_minor_units !== null &&
-    subtotal_minor_units !== null &&
-    tax_minor_units !== null
-  ) {
-    const diff = Math.abs(
-      subtotal_minor_units + tax_minor_units - total_minor_units
-    );
+  if (total_minor_units !== null && subtotal_minor_units !== null && tax_minor_units !== null) {
+    const diff = Math.abs(subtotal_minor_units + tax_minor_units - total_minor_units);
     // Allow up to 2 minor units (e.g. 2 cents) for rounding discrepancy
     arithmetic_matches = diff <= 2;
   }
@@ -258,7 +251,9 @@ function parseAmountFromLine(line: string, currency: string): number | null {
 
   // Match currency symbols or numbers with decimal points (e.g. 1,579.00 or 19.80)
   // Or standalone integers up to 7 digits that do NOT start with leading 0 (avoiding phone numbers like 0917...)
-  const matches = cleaned.matchAll(/(?:[₱$€¥]|PHP|USD)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[1-9][0-9]{0,6}(?:\.[0-9]{2})?)/gi);
+  const matches = cleaned.matchAll(
+    /(?:[₱$€¥]|PHP|USD)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[1-9][0-9]{0,6}(?:\.[0-9]{2})?)/gi,
+  );
 
   let bestAmount: number | null = null;
   for (const m of matches) {

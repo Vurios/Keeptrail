@@ -1,7 +1,7 @@
 /**
  * Keeptrail Free Local Android Pilot — Core Domain Types
  * Source of Truth: Keeptrail_Free_APK_Pilot_Blueprint.md & Keeptrail_Local_Storage_and_Backup_Guide.md
- * 
+ *
  * Strict Local Architecture: No accounts, no cloud backend, no subscriptions.
  */
 

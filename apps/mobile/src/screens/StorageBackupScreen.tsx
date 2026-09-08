@@ -45,10 +45,11 @@ function formatBytes(bytes: number): string {
 }
 
 interface StorageBackupScreenProps {
+  onBack: () => void;
   onOpenAsk: () => void;
 }
 
-export function StorageBackupScreen({ onOpenAsk }: StorageBackupScreenProps) {
+export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenProps) {
   const { colors, spacing, radius } = useTheme();
   const {
     vault,
@@ -228,6 +229,7 @@ export function StorageBackupScreen({ onOpenAsk }: StorageBackupScreenProps) {
       <AppBar
         title="Vault"
         subtitle="Everything here stays on this phone"
+        onBack={onBack}
         actions={<IconButton icon="assistant" label="Ask Keeptrail" onPress={onOpenAsk} />}
       />
 

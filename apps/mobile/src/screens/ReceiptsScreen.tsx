@@ -53,10 +53,15 @@ import { CURRENCY_OPTIONS, DOCUMENT_TYPE_OPTIONS } from "../constants/options";
 import { formatDate, validateDateInput } from "../utils/dates";
 import { haptics } from "../utils/haptics";
 
-type ListScope = "all" | "review" | "trash";
+type ListScope = "all" | "review" | "unfiled" | "trash";
 
 interface ReceiptsScreenProps {
-  initialFilter: { collectionId?: string; reviewOnly?: boolean; focusReceiptId?: string };
+  initialFilter: {
+    collectionId?: string;
+    reviewOnly?: boolean;
+    unfiledOnly?: boolean;
+    focusReceiptId?: string;
+  };
   onFilterConsumed: () => void;
   onStartCapture: () => void;
 }
@@ -137,6 +142,10 @@ export function ReceiptsScreen({
   // arrive with a filter or a specific record to open.
   useEffect(() => {
     if (initialFilter.reviewOnly) setScope("review");
+    if (initialFilter.unfiledOnly) {
+      setScope("unfiled");
+      setCollectionId(null);
+    }
     if (initialFilter.collectionId) {
       setCollectionId(initialFilter.collectionId);
       setScope("all");
@@ -145,7 +154,12 @@ export function ReceiptsScreen({
       const target = vault.getReceipt(initialFilter.focusReceiptId);
       if (target) openEditor(target);
     }
-    if (initialFilter.reviewOnly || initialFilter.collectionId || initialFilter.focusReceiptId) {
+    if (
+      initialFilter.reviewOnly ||
+      initialFilter.unfiledOnly ||
+      initialFilter.collectionId ||
+      initialFilter.focusReceiptId
+    ) {
       onFilterConsumed();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,12 +177,15 @@ export function ReceiptsScreen({
           )
         : trashed;
     }
-    return vault.listReceipts({
+    const list = vault.listReceipts({
       trashScope: "active",
       searchQuery: query.trim() || undefined,
       collectionId: collectionId ?? undefined,
       reviewStatus: scope === "review" ? "unreviewed" : undefined,
     });
+    // Unfiled means "in no collection at all", which the vault filter cannot
+    // express as a collection id.
+    return scope === "unfiled" ? list.filter((r) => r.collection_ids.length === 0) : list;
   }, [scope, query, collectionId, vault, receipts, trashed]);
 
   const collectionCounts = useMemo(() => {
@@ -430,6 +447,15 @@ export function ReceiptsScreen({
             }}
             count={reviewCount}
           />
+          <Chip
+            label="Unfiled"
+            selected={scope === "unfiled"}
+            onPress={() => {
+              setScope("unfiled");
+              setCollectionId(null);
+            }}
+            count={receipts.filter((r) => r.collection_ids.length === 0).length}
+          />
           {collections.map((collection) => (
             <Chip
               key={collection.id}
@@ -472,22 +498,26 @@ export function ReceiptsScreen({
             title={
               scope === "trash"
                 ? "Trash is empty"
-                : scope === "review"
-                  ? "Everything has been reviewed"
-                  : query.trim() || collectionId
-                    ? "Nothing here yet"
-                    : "No receipts saved yet"
+                : scope === "unfiled"
+                  ? "Everything is filed"
+                  : scope === "review"
+                    ? "Everything has been reviewed"
+                    : query.trim() || collectionId
+                      ? "Nothing here yet"
+                      : "No receipts saved yet"
             }
             body={
               scope === "trash"
                 ? "Receipts you delete land here first, so a mistake is recoverable."
-                : scope === "review"
-                  ? "Every saved receipt has had its amount confirmed."
-                  : collectionId
-                    ? `Open a receipt and add it to ${
-                        activeCollection?.name ?? "this collection"
-                      } to file it here.`
-                    : "Add your first receipt and it is written straight to this phone."
+                : scope === "unfiled"
+                  ? "Every receipt belongs to at least one collection."
+                  : scope === "review"
+                    ? "Every saved receipt has had its amount confirmed."
+                    : collectionId
+                      ? `Open a receipt and add it to ${
+                          activeCollection?.name ?? "this collection"
+                        } to file it here.`
+                      : "Add your first receipt and it is written straight to this phone."
             }
             action={
               scope === "all" && !collectionId && !query.trim()

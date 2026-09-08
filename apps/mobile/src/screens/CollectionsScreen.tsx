@@ -1,589 +1,395 @@
-import React, { useState } from "react";
+/**
+ * Collections.
+ *
+ * One of the four primary destinations. It shows how receipts are grouped and
+ * what each group is worth, and it can create and edit groups — the previous
+ * version was read-only and instructed users to file receipts from an editor
+ * that had no such control.
+ *
+ * Counting rule (blueprint §4, "Summaries and reports"): a receipt may belong to
+ * several collections without becoming several purchases. Per-collection totals
+ * therefore overlap by design, and the screen says so rather than presenting a
+ * sum of them as a grand total. The unfiled count is computed over canonical
+ * receipt IDs so nothing is double-counted.
+ */
+
+import React, { useCallback, useMemo, useState } from "react";
 import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  Modal,
-  TextInput,
-  Platform,
-  StatusBar,
+  Alert,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  type ListRenderItemInfo,
 } from "react-native";
+import { calculateReceiptTotals, type CollectionRecord, type ReceiptRecord } from "@katibay/shared";
+
 import { useTheme } from "../theme/ThemeContext";
-import { useToast } from "../components/ToastContext";
 import { useLocalVault } from "../vault-context";
+import { useSnackbar } from "../components/SnackbarContext";
 import {
-  formatMoney,
-  calculateReceiptTotals,
-  CollectionRecord,
-  ReceiptRecord,
-} from "@katibay/shared";
+  AppBar,
+  AppText,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  IconButton,
+  Money,
+  Notice,
+  useContentInsets,
+} from "../components/primitives";
+import { Icon } from "../components/Icon";
+import { COLLECTION_COLOR_OPTIONS } from "../constants/options";
 import { haptics } from "../utils/haptics";
 
 interface CollectionsScreenProps {
-  onOpenReceipt: (receipt: ReceiptRecord) => void;
+  onOpenCollection: (collectionId: string) => void;
+  onOpenUnfiled: () => void;
 }
 
-export const CollectionsScreen: React.FC<CollectionsScreenProps> = ({ onOpenReceipt }) => {
-  const { colors, spacing, borderRadius, typography, isDark } = useTheme();
-  const { collections, receipts, saveCollection } = useLocalVault();
-  const { showToast } = useToast();
-  const [selectedCollection, setSelectedCollection] = useState<CollectionRecord | null>(null);
+interface CollectionSummary {
+  collection: CollectionRecord;
+  receiptCount: number;
+  /** One formatted total per currency. Currencies are never blended. */
+  totals: { currency: string; formatted: string; count: number }[];
+  unreviewedCount: number;
+}
 
-  // New collection modal state
-  const [isCreating, setIsCreating] = useState(false);
-  const [newColName, setNewColName] = useState("");
-  const [newColDesc, setNewColDesc] = useState("");
-  const [newColColor, setNewColColor] = useState("#146B55");
+export function CollectionsScreen({ onOpenCollection, onOpenUnfiled }: CollectionsScreenProps) {
+  const { colors, spacing, radius } = useTheme();
+  const { receipts, collections, saveCollection } = useLocalVault();
+  const { showSnackbar } = useSnackbar();
+  const contentInsets = useContentInsets();
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [color, setColor] = useState(COLLECTION_COLOR_OPTIONS[0].value);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const COLOR_OPTIONS = ["#146B55", "#245BB2", "#865500", "#B42318", "#5C6C65"];
+  const summaries = useMemo<CollectionSummary[]>(() => {
+    return collections.map((collection) => {
+      const members = receipts.filter((r) => r.collection_ids.includes(collection.id));
+      const summary = calculateReceiptTotals(members);
+      return {
+        collection,
+        receiptCount: members.length,
+        totals: Object.values(summary.currencies).map((entry) => ({
+          currency: entry.currency,
+          formatted: entry.formatted,
+          count: entry.record_count,
+        })),
+        unreviewedCount: members.filter((r) => r.review_status !== "reviewed").length,
+      };
+    });
+  }, [collections, receipts]);
 
-  const handleNameChange = (text: string) => {
-    setNewColName(text);
-    if (text.trim().length > 0) {
-      setNameError(null);
+  // Canonical IDs, so a receipt filed in three collections is still one receipt.
+  const filedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const receipt of receipts) {
+      if (receipt.collection_ids.length > 0) ids.add(receipt.id);
     }
-  };
+    return ids;
+  }, [receipts]);
 
-  const handleCreateCollection = () => {
-    if (isSubmitting) return;
+  const unfiledCount = receipts.length - filedIds.size;
 
-    if (!newColName.trim()) {
+  const anyMultiFiled = useMemo(
+    () => receipts.some((r) => r.collection_ids.length > 1),
+    [receipts],
+  );
+
+  const openCreate = useCallback(() => {
+    haptics.tap();
+    setEditingId(null);
+    setName("");
+    setDescription("");
+    setColor(COLLECTION_COLOR_OPTIONS[0].value);
+    setNameError(null);
+    setEditorOpen(true);
+  }, []);
+
+  const openEdit = useCallback((collection: CollectionRecord) => {
+    haptics.tap();
+    setEditingId(collection.id);
+    setName(collection.name);
+    setDescription(collection.description ?? "");
+    setColor(collection.color);
+    setNameError(null);
+    setEditorOpen(true);
+  }, []);
+
+  const handleSave = useCallback(() => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameError("Give the collection a name.");
       haptics.error();
-      setNameError("Collection name is required");
+      return;
+    }
+    const clash = collections.some(
+      (c) => c.id !== editingId && c.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (clash) {
+      setNameError("You already have a collection with that name.");
+      haptics.error();
       return;
     }
 
-    setIsSubmitting(true);
-    const created = {
-      id: `col_${Date.now()}`,
-      name: newColName.trim(),
-      color: newColColor,
-      icon: "folder",
-      description: newColDesc.trim() || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const now = new Date().toISOString();
+    const existing = editingId ? collections.find((c) => c.id === editingId) : null;
 
-    saveCollection(created);
-    haptics.success();
-    showToast({
-      type: "success",
-      title: "Collection Created",
-      message: `"${created.name}" is ready for receipts.`,
+    saveCollection({
+      id: editingId ?? `col_${Date.now()}`,
+      name: trimmed,
+      color,
+      icon: existing?.icon ?? "folder",
+      description: description.trim() || null,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
     });
 
-    setNewColName("");
-    setNewColDesc("");
-    setNameError(null);
-    setIsSubmitting(false);
-    setIsCreating(false);
-  };
+    haptics.success();
+    showSnackbar({
+      message: existing ? `"${trimmed}" updated.` : `"${trimmed}" created.`,
+      tone: "success",
+    });
+    setEditorOpen(false);
+  }, [name, description, color, editingId, collections, saveCollection, showSnackbar]);
 
-  const getCollectionReceipts = (colId: string) => {
-    return receipts.filter((r) => r.collection_ids.includes(colId));
-  };
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<CollectionSummary>) => (
+      <Card
+        onPress={() => onOpenCollection(item.collection.id)}
+        accessibilityLabel={`${item.collection.name}, ${item.receiptCount} receipts`}
+        accessibilityHint="Opens these receipts in the Receipts tab"
+      >
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.md }}>
+          {/* A colour bar rather than an icon in a circle: it identifies the
+              collection without pretending to be a button. */}
+          <View
+            style={{
+              width: 4,
+              alignSelf: "stretch",
+              minHeight: 40,
+              borderRadius: 2,
+              backgroundColor: item.collection.color,
+            }}
+          />
+
+          <View style={{ flex: 1, gap: spacing.xs }}>
+            <AppText role="bodyStrong" numberOfLines={1}>
+              {item.collection.name}
+            </AppText>
+            {item.collection.description ? (
+              <AppText role="small" tone="secondary" numberOfLines={2}>
+                {item.collection.description}
+              </AppText>
+            ) : null}
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.sm,
+                flexWrap: "wrap",
+                marginTop: spacing.xxs,
+              }}
+            >
+              <AppText role="small" tone="muted">
+                {item.receiptCount} receipt{item.receiptCount === 1 ? "" : "s"}
+              </AppText>
+              {item.unreviewedCount > 0 ? (
+                <AppText role="small" style={{ color: colors.status.warning.text }}>
+                  {item.unreviewedCount} to review
+                </AppText>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={{ alignItems: "flex-end", gap: spacing.xs }}>
+            {item.totals.length === 0 ? (
+              <AppText role="small" tone="muted">
+                No amounts
+              </AppText>
+            ) : (
+              item.totals.map((total) => (
+                <Money key={total.currency} formatted={total.formatted} tone="accent" />
+              ))
+            )}
+            <IconButton
+              icon="edit"
+              label={`Edit ${item.collection.name}`}
+              onPress={() => openEdit(item.collection)}
+            />
+          </View>
+        </View>
+      </Card>
+    ),
+    [spacing, colors, onOpenCollection, openEdit],
+  );
+
+  const keyExtractor = useCallback((item: CollectionSummary) => item.collection.id, []);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Collections</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-              Organize receipts for projects, trips, or taxes
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.addBtn,
-              {
-                backgroundColor: colors.primary,
-              },
-            ]}
-            onPress={() => {
-              haptics.tap();
-              setIsCreating(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Create new collection"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.addBtnText, { color: colors.primaryFg }]}>+ New</Text>
-          </TouchableOpacity>
-        </View>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <AppBar
+        title="Collections"
+        subtitle="Group receipts by what they are for"
+        actions={
+          <IconButton icon="add" tone="primary" label="New collection" onPress={openCreate} />
+        }
+      />
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {collections.length === 0 ? (
-            <View
-              style={[
-                styles.emptyBox,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text style={styles.emptyIcon}>📁</Text>
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                No Collections Yet
-              </Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                Create collections like "Taxes 2026", "Medical Claims", or "Trip to Cebu" to group
-                your receipts.
-              </Text>
-            </View>
-          ) : (
-            collections.map((col) => {
-              const colReceipts = getCollectionReceipts(col.id);
-              const totals = calculateReceiptTotals(colReceipts);
-              const currKey = Object.keys(totals.currencies)[0];
-              const formattedTotal = currKey ? totals.currencies[currKey].formatted : "₱0.00";
-
-              const isExpanded = selectedCollection?.id === col.id;
-
-              return (
-                <View
-                  key={col.id}
-                  style={[
-                    styles.collectionCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.collectionHeader}
-                    onPress={() => {
-                      haptics.tap();
-                      setSelectedCollection(isExpanded ? null : col);
-                    }}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: isExpanded }}
-                    accessibilityLabel={`${col.name}, ${colReceipts.length} receipts, total ${formattedTotal}`}
-                  >
-                    <View style={[styles.colorIndicator, { backgroundColor: col.color }]} />
-                    <View style={styles.colInfo}>
-                      <Text style={[styles.colName, { color: colors.textPrimary }]}>
-                        {col.name}
-                      </Text>
-                      {col.description && (
-                        <Text style={[styles.colDesc, { color: colors.textSecondary }]}>
-                          {col.description}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={styles.colTotals}>
-                      <Text style={[styles.colAmount, { color: colors.primary }]}>
-                        {formattedTotal}
-                      </Text>
-                      <Text style={[styles.colCount, { color: colors.textSecondary }]}>
-                        {colReceipts.length} item(s) {isExpanded ? "▲" : "▼"}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Expanded Receipts in this collection */}
-                  {isExpanded && (
-                    <View
-                      style={[
-                        styles.expandedItems,
-                        {
-                          borderTopColor: colors.border,
-                          backgroundColor: colors.surfaceAlt,
-                        },
-                      ]}
-                    >
-                      {colReceipts.length === 0 ? (
-                        <View style={styles.emptyColBox}>
-                          <Text style={[styles.emptyColText, { color: colors.textSecondary }]}>
-                            No receipts filed in this collection yet.
-                          </Text>
-                          <Text style={[styles.emptyColSubtext, { color: colors.textMuted }]}>
-                            Edit any receipt and assign it to this collection.
-                          </Text>
-                        </View>
-                      ) : (
-                        colReceipts.map((r) => (
-                          <TouchableOpacity
-                            key={r.id}
-                            style={[
-                              styles.colReceiptRow,
-                              {
-                                borderBottomColor: colors.border,
-                              },
-                            ]}
-                            onPress={() => onOpenReceipt(r)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Receipt ${r.merchant || r.title}`}
-                          >
-                            <Text
-                              style={[styles.colReceiptTitle, { color: colors.textPrimary }]}
-                              numberOfLines={1}
-                            >
-                              {r.merchant || r.title}
-                            </Text>
-                            <Text style={[styles.colReceiptAmount, { color: colors.primary }]}>
-                              {formatMoney(r.total_minor_units, r.currency)}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                      )}
-                    </View>
-                  )}
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-
-        {/* Create Collection Modal */}
-        <Modal
-          visible={isCreating}
-          animationType="slide"
-          presentationStyle="formSheet"
-          onRequestClose={() => setIsCreating(false)}
-        >
-          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-            >
-              <View
-                style={[
-                  styles.modalHeader,
-                  {
-                    backgroundColor: colors.surface,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
+      <FlatList
+        data={summaries}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={contentInsets}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
+        ListHeaderComponent={
+          <View style={{ gap: spacing.md, marginBottom: spacing.md }}>
+            {unfiledCount > 0 ? (
+              <Card
+                onPress={onOpenUnfiled}
+                accessibilityLabel={`${unfiledCount} receipts are not in any collection`}
+                accessibilityHint="Opens the unfiled receipts so you can file them"
               >
-                <TouchableOpacity
-                  onPress={() => {
-                    haptics.tap();
-                    setIsCreating(false);
-                    setNameError(null);
-                  }}
-                  style={styles.modalHeaderBtn}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
-                </TouchableOpacity>
-                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-                  New Collection
-                </Text>
-                <TouchableOpacity
-                  onPress={handleCreateCollection}
-                  style={[
-                    styles.modalDoneBtn,
-                    {
-                      backgroundColor: colors.primary,
-                      opacity: isSubmitting ? 0.6 : 1,
-                    },
-                  ]}
-                  disabled={isSubmitting}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.modalDone, { color: colors.primaryFg }]}>
-                    {isSubmitting ? "Creating..." : "Create"}
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+                  <Icon name="collection" size={22} color={colors.textSecondary} />
+                  <View style={{ flex: 1 }}>
+                    <AppText role="bodyStrong">
+                      {unfiledCount} unfiled receipt{unfiledCount === 1 ? "" : "s"}
+                    </AppText>
+                    <AppText role="small" tone="secondary">
+                      Not in any collection yet
+                    </AppText>
+                  </View>
+                  <Icon name="chevron" size={20} color={colors.textMuted} />
+                </View>
+              </Card>
+            ) : null}
+
+            {anyMultiFiled ? (
+              <Notice
+                tone="neutral"
+                icon="info"
+                body="A receipt can sit in more than one collection, so these totals overlap. Each receipt is still counted once in your Home total."
+              />
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="collection"
+            title="No collections yet"
+            body="Collections group receipts by purpose — a trip, a project, a claim. Open any receipt to file it into one."
+            action={{ label: "New collection", onPress: openCreate, icon: "add" }}
+          />
+        }
+      />
+
+      <Modal visible={editorOpen} animationType="slide" onRequestClose={() => setEditorOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <AppBar
+            title={editingId ? "Edit collection" : "New collection"}
+            onBack={() => setEditorOpen(false)}
+            actions={<Button label="Save" onPress={handleSave} />}
+          />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={{ padding: spacing.gutter, gap: spacing.lg }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Field
+                label="Name"
+                value={name}
+                onChangeText={(text) => {
+                  setName(text);
+                  if (text.trim()) setNameError(null);
+                }}
+                placeholder="e.g. Home renovation, Tax year 2026"
+                error={nameError}
+                required
+              />
+
+              <Field
+                label="What belongs here?"
+                value={description}
+                onChangeText={setDescription}
+                placeholder="A short reminder of what this collection is for"
+                multiline
+              />
+
+              <View style={{ gap: spacing.sm }}>
+                <AppText role="smallStrong" tone="secondary">
+                  Colour
+                </AppText>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                  {COLLECTION_COLOR_OPTIONS.map((option) => {
+                    const selected = option.value === color;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setColor(option.value)}
+                        accessibilityRole="radio"
+                        // Named, not announced as a hex code.
+                        accessibilityLabel={option.label}
+                        accessibilityState={{ selected }}
+                        style={{
+                          minWidth: spacing.touch,
+                          minHeight: spacing.touch,
+                          borderRadius: radius.control,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderWidth: selected ? 2 : 1,
+                          borderColor: selected ? colors.textPrimary : colors.divider,
+                          backgroundColor: colors.surface,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            backgroundColor: option.value,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {/* Selection is shown by a mark as well as by colour,
+                              so it does not depend on colour perception. */}
+                          {selected ? <Icon name="check" size={14} color="#FFFFFF" /> : null}
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
 
-              <ScrollView
-                style={styles.modalForm}
-                contentContainerStyle={{ padding: 16 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Collection Name *
-                </Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: nameError ? colors.status.danger.border : colors.controlBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  placeholder="e.g. Home Renovation, Tax Year 2026"
-                  placeholderTextColor={colors.textMuted}
-                  value={newColName}
-                  onChangeText={handleNameChange}
+              {editingId ? (
+                <Notice
+                  tone="neutral"
+                  icon="info"
+                  body="Renaming a collection keeps every receipt filed in it."
                 />
-                {nameError && (
-                  <Text style={[styles.inlineError, { color: colors.status.danger.text }]}>
-                    {nameError}
-                  </Text>
-                )}
-
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Description (Optional)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.controlBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  placeholder="What receipts belong here?"
-                  placeholderTextColor={colors.textMuted}
-                  value={newColDesc}
-                  onChangeText={setNewColDesc}
-                />
-
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Color Tag</Text>
-                <View style={styles.colorsRow}>
-                  {COLOR_OPTIONS.map((c) => (
-                    <TouchableOpacity
-                      key={c}
-                      style={[
-                        styles.colorCircle,
-                        { backgroundColor: c },
-                        newColColor === c && [
-                          styles.colorCircleSelected,
-                          { borderColor: colors.primary },
-                        ],
-                      ]}
-                      onPress={() => {
-                        haptics.tap();
-                        setNewColColor(c);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Select color ${c}`}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </SafeAreaView>
-        </Modal>
-      </View>
-    </SafeAreaView>
+              ) : null}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
   );
-};
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-  },
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  addBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    minHeight: 36,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 110,
-  },
-  emptyBox: {
-    alignItems: "center",
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginTop: 16,
-  },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 10,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  collectionCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 12,
-    overflow: "hidden",
-  },
-  collectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    minHeight: 64,
-  },
-  colorIndicator: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginRight: 12,
-  },
-  colInfo: {
-    flex: 1,
-  },
-  colName: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  colDesc: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  colTotals: {
-    alignItems: "flex-end",
-  },
-  colAmount: {
-    fontSize: 15,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  colCount: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  expandedItems: {
-    borderTopWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  emptyColBox: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  emptyColText: {
-    fontSize: 13,
-    fontStyle: "italic",
-  },
-  emptyColSubtext: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  colReceiptRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    minHeight: 44,
-  },
-  colReceiptTitle: {
-    fontSize: 14,
-    fontWeight: "500",
-    flex: 1,
-    marginRight: 10,
-  },
-  colReceiptAmount: {
-    fontSize: 14,
-    fontWeight: "600",
-    fontVariant: ["tabular-nums"],
-  },
-  modalSafe: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    height: 56,
-    borderBottomWidth: 1,
-  },
-  modalHeaderBtn: {
-    minWidth: 54,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  modalCancel: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  modalDoneBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    minHeight: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalDone: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  modalForm: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 14,
-    marginBottom: 6,
-  },
-  textInput: {
-    height: 48,
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-  },
-  inlineError: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  colorsRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 6,
-  },
-  colorCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-  },
-  colorCircleSelected: {
-    borderWidth: 3,
-    transform: [{ scale: 1.15 }],
-  },
-});
+}
