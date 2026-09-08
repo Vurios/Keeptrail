@@ -615,6 +615,119 @@ export function OptionRow<T extends string>({
   );
 }
 
+/**
+ * Free-text tags with suggestions from tags already in use.
+ *
+ * Suggestions matter more than they look: without them every user invents
+ * "warranty", "Warranty" and "warranties" and the tag list stops being useful.
+ * The vault de-duplicates case-insensitively, and offering the existing
+ * spelling first is what keeps that from being surprising.
+ */
+export function TagEditor({
+  tags,
+  onChange,
+  suggestions,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  suggestions: string[];
+}) {
+  const { colors, spacing, radius, typography } = useTheme();
+  const [draft, setDraft] = React.useState("");
+
+  const lowerCurrent = tags.map((tag) => tag.toLowerCase());
+  const unused = suggestions.filter((tag) => !lowerCurrent.includes(tag.toLowerCase())).slice(0, 8);
+
+  const add = (value: string) => {
+    const tag = value.trim();
+    if (!tag) return;
+    if (lowerCurrent.includes(tag.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    onChange([...tags, tag]);
+    setDraft("");
+  };
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <AppText role="smallStrong" tone="secondary">
+        Tags
+      </AppText>
+
+      {tags.length > 0 ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          {tags.map((tag) => (
+            <Pressable
+              key={tag}
+              onPress={() => onChange(tags.filter((t) => t !== tag))}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove tag ${tag}`}
+              android_ripple={{ color: colors.scrim }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.xs,
+                minHeight: 40,
+                paddingHorizontal: spacing.md,
+                borderRadius: radius.full,
+                backgroundColor: colors.primaryContainer,
+              }}
+            >
+              <Text
+                style={[typography.smallStrong as TextStyle, { color: colors.onPrimaryContainer }]}
+              >
+                {tag}
+              </Text>
+              <Icon name="close" size={14} color={colors.onPrimaryContainer} />
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          onSubmitEditing={() => add(draft)}
+          placeholder="Add a tag"
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="Add a tag"
+          returnKeyType="done"
+          autoCapitalize="none"
+          style={[
+            typography.body as TextStyle,
+            {
+              flex: 1,
+              color: colors.textPrimary,
+              backgroundColor: colors.surface,
+              borderWidth: 1.5,
+              borderColor: colors.outline,
+              borderRadius: radius.control,
+              paddingHorizontal: spacing.md,
+              minHeight: spacing.touch,
+            },
+          ]}
+        />
+        <Button label="Add" variant="tonal" onPress={() => add(draft)} disabled={!draft.trim()} />
+      </View>
+
+      {unused.length > 0 ? (
+        <View style={{ gap: spacing.xs }}>
+          <AppText role="small" tone="muted">
+            Already used
+          </AppText>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {unused.map((tag) => (
+              <Chip key={tag} label={tag} selected={false} onPress={() => add(tag)} />
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // --- Screen scaffolding ------------------------------------------------------
 
 /**

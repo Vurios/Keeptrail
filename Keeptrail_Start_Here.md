@@ -10,13 +10,19 @@ Your preferred outcome is a one-time paid local Google Play app. Cloud remains a
 
 ## Which files to use
 
-| Order | File                                          | When to use                                                |
-| ----- | --------------------------------------------- | ---------------------------------------------------------- |
-| 1     | Keeptrail_Free_APK_Pilot_Blueprint.md         | Active build specification now; revised to fully local     |
-| 2     | Keeptrail_Local_Storage_and_Backup_Guide.md   | Required technical companion during pilot implementation   |
-| 3     | Keeptrail_Google_Play_Screenshot_Prompts.md   | Brand/splash concepts now; real release captures later     |
-| 4A    | Keeptrail_Local_AI_Offline_Blueprint_v7.md    | Recommended local paid-release path after the pilot        |
-| 4B    | Keeptrail_Local_AI_Cloud_Sync_Blueprint_v7.md | Optional alternative only after an explicit cloud decision |
+> **Only `Keeptrail_Free_APK_Pilot_Blueprint_V2.md` (Revision 8) is authoritative.**
+> The earlier `Keeptrail_Free_APK_Pilot_Blueprint.md` and the Katibay v2 product
+> blueprint have been deleted from this repository. Their M/P prompt sequences,
+> cloud/Gemini architecture and passport feature do not apply. Where this file
+> and the V2 blueprint disagree, the V2 blueprint wins.
+
+| Order | File                                          | When to use                                                   |
+| ----- | --------------------------------------------- | ------------------------------------------------------------- |
+| 1     | Keeptrail_Free_APK_Pilot_Blueprint_V2.md      | **The single authoritative build specification (Revision 8)** |
+| 2     | Keeptrail_Local_Storage_and_Backup_Guide.md   | Required technical companion during pilot implementation      |
+| 3     | Keeptrail_Google_Play_Screenshot_Prompts.md   | Brand/splash concepts now; real release captures later        |
+| 4A    | Keeptrail_Local_AI_Offline_Blueprint_v7.md    | Recommended local paid-release path after the pilot           |
+| 4B    | Keeptrail_Local_AI_Cloud_Sync_Blueprint_v7.md | Optional alternative only after an explicit cloud decision    |
 
 The two v7 filenames remain stable, but their contents are revised to revision 8. Do not run both release alternatives or combine their account/privacy requirements. This Start Here file is the sixth file in the set.
 
@@ -59,8 +65,9 @@ Keep a common receipt domain, stable IDs and portable archives. Do not pre-build
 ## First prompt to paste
 
 ```text
-The product direction has changed. Use the revised Keeptrail_Free_APK_Pilot_Blueprint.md
-and Keeptrail_Local_Storage_and_Backup_Guide.md as the current source of truth.
+The product direction has changed. Use Keeptrail_Free_APK_Pilot_Blueprint_V2.md
+(Revision 8) and Keeptrail_Local_Storage_and_Backup_Guide.md as the current source
+of truth.
 Build a real free LOCAL Android APK pilot: no accounts, receipt backend, multi-phone
 sync, Gemini/cloud inference, ads, subscriptions or paywalls. Preserve existing
 project edits and data. Do not delete the project or reset databases.

@@ -55,7 +55,7 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
     vault,
     stats,
     vaultLocation,
-    storageError,
+    warning,
     emptyTrash,
     exportEncryptedBackup,
     listBackupArchives,
@@ -234,13 +234,8 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
       />
 
       <ScrollView contentContainerStyle={contentInsets}>
-        {storageError ? (
-          <Notice
-            tone="danger"
-            icon="warning"
-            title="Records are not being saved"
-            body={storageError}
-          />
+        {warning ? (
+          <Notice tone="danger" icon="warning" title="Heads up about storage" body={warning} />
         ) : (
           <Notice
             tone="neutral"
@@ -321,7 +316,7 @@ export function StorageBackupScreen({ onBack, onOpenAsk }: StorageBackupScreenPr
                 label="Create a backup"
                 icon="backup"
                 fullWidth
-                disabled={Boolean(storageError)}
+                disabled={Boolean(warning)}
                 onPress={() => {
                   haptics.tap();
                   setExportOpen(true);

@@ -59,7 +59,7 @@ export function HomeScreen({
   onStartCapture,
 }: HomeScreenProps) {
   const { colors, spacing, radius, typography, mode, setMode, isDark } = useTheme();
-  const { vault, receipts, collections, actions, stats, storageError, loadSampleReceipts } =
+  const { vault, receipts, collections, actions, stats, warning, loadSampleReceipts } =
     useLocalVault();
   const contentInsets = useContentInsets();
   const [query, setQuery] = useState("");
@@ -120,13 +120,8 @@ export function HomeScreen({
 
   const header = (
     <View style={{ gap: spacing.lg }}>
-      {storageError ? (
-        <Notice
-          tone="danger"
-          icon="warning"
-          title="Records are not being saved"
-          body={storageError}
-        />
+      {warning ? (
+        <Notice tone="danger" icon="warning" title="Heads up about storage" body={warning} />
       ) : null}
 
       {/* Search is the first control because retrieval is the product's verb. */}

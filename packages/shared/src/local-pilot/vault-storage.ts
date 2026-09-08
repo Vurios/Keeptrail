@@ -16,10 +16,24 @@
  *    swap it into place.
  */
 
-import type { ActionRecord, AttachmentRecord, CollectionRecord, ReceiptRecord } from "./types";
+import type {
+  ActionRecord,
+  AttachmentRecord,
+  CaptureDraft,
+  CollectionRecord,
+  CustomFieldDefinition,
+  ReceiptRecord,
+} from "./types";
 
-/** Bumped when the on-disk index shape changes in a non-additive way. */
-export const VAULT_INDEX_VERSION = 1;
+/**
+ * Bumped when the on-disk index shape changes.
+ *
+ * v1 -> v2 added tags, custom field values, custom field definitions and
+ * capture drafts. The migration is additive and runs when the vault loads, so
+ * an index written by an older build opens without losing anything.
+ */
+export const VAULT_INDEX_VERSION = 2;
+export const OLDEST_SUPPORTED_INDEX_VERSION = 1;
 
 export interface VaultIndex {
   version: number;
@@ -27,6 +41,8 @@ export interface VaultIndex {
   attachments: AttachmentRecord[];
   collections: CollectionRecord[];
   actions: ActionRecord[];
+  custom_field_definitions: CustomFieldDefinition[];
+  drafts: CaptureDraft[];
   last_backup_timestamp: string | null;
   records_modified_since_backup: number;
 }

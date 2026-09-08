@@ -35,6 +35,7 @@ function receipt(overrides: Partial<ReceiptRecord> & { id: string }): ReceiptRec
     notes: null,
     purpose: null,
     tags: [],
+    custom_fields: {},
     collection_ids: [],
     is_trashed: false,
     created_at: "2026-09-04T00:00:00.000Z",

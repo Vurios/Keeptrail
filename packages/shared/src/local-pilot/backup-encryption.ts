@@ -23,6 +23,7 @@ import type {
   ReceiptRecord,
   AttachmentRecord,
   CollectionRecord,
+  CustomFieldDefinition,
   ActionRecord,
 } from "./types";
 
@@ -40,6 +41,7 @@ export interface EncryptBackupOptions {
   attachments: AttachmentRecord[];
   collections: CollectionRecord[];
   actions: ActionRecord[];
+  custom_field_definitions?: CustomFieldDefinition[];
   files: Record<string, Uint8Array>; // relative_path -> Uint8Array
   appVersion?: string;
 }
@@ -100,6 +102,7 @@ export function createEncryptedBackup(data: EncryptBackupOptions, password: stri
     attachments: data.attachments,
     collections: data.collections,
     actions: data.actions,
+    custom_field_definitions: data.custom_field_definitions ?? [],
     files: filesBase64,
   };
 
@@ -184,6 +187,7 @@ export function restoreEncryptedBackup(
     attachments: AttachmentRecord[];
     collections: CollectionRecord[];
     actions: ActionRecord[];
+    custom_field_definitions?: CustomFieldDefinition[];
     files: Record<string, string>;
   };
 
@@ -226,6 +230,7 @@ export function restoreEncryptedBackup(
     attachments: payload.attachments || [],
     collections: payload.collections || [],
     actions: payload.actions || [],
+    custom_field_definitions: payload.custom_field_definitions || [],
     files: restoredFiles,
   };
 }

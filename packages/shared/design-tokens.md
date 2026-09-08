@@ -1,5 +1,11 @@
 # Katibay Visual Design Tokens & System Specification
 
+> **Scope: the preserved Katibay web app only.** These tokens drive
+> `apps/web` and its Tailwind config. They are **not** the design system for the
+> Keeptrail mobile pilot, which uses `apps/mobile/src/theme/tokens.ts` and the
+> shared primitives beside it. Do not reconcile the two palettes; they belong to
+> different products.
+
 This document defines the foundational visual tokens for the **Katibay** ecosystem across web, mobile, and print reports. These tokens originate directly from the brand architecture established in `packages/shared/brand/rationale.md` (Concept 1: _The Perforated Seal of Katibayan_).
 
 ---

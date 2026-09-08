@@ -12,13 +12,21 @@
 import type {
   ReceiptRecord,
   AttachmentRecord,
+  CaptureDraft,
   CollectionRecord,
+  CustomFieldDefinition,
   ActionRecord,
   ReviewStatus,
 } from "./types";
 import type { EncryptBackupOptions } from "./backup-encryption";
 import {
+  findAllDuplicateSuggestions,
+  findDuplicateSuggestions,
+  type DuplicateSuggestion,
+} from "./duplicate-detection";
+import {
   InMemoryVaultStore,
+  OLDEST_SUPPORTED_INDEX_VERSION,
   VAULT_INDEX_VERSION,
   type VaultIndex,
   type VaultStore,
@@ -96,6 +104,8 @@ export class LocalReceiptVault {
   private attachments: Map<string, AttachmentRecord> = new Map();
   private collections: Map<string, CollectionRecord> = new Map();
   private actions: Map<string, ActionRecord> = new Map();
+  private customFields: Map<string, CustomFieldDefinition> = new Map();
+  private drafts: Map<string, CaptureDraft> = new Map();
   private lastBackupTimestamp: string | null = null;
   private recordsModifiedSinceBackup: number = 0;
 
@@ -132,19 +142,43 @@ export class LocalReceiptVault {
       return false;
     }
 
-    if (!index || index.version !== VAULT_INDEX_VERSION) return false;
+    if (!index || typeof index.version !== "number") return false;
+    // A newer index than this build understands is left strictly alone: opening
+    // it read-write would drop whatever fields this version does not know.
+    if (index.version > VAULT_INDEX_VERSION) {
+      throw new Error(
+        `This vault was written by a newer version of Keeptrail (format v${index.version}). ` +
+          "Update the app rather than opening it with this build.",
+      );
+    }
+    if (index.version < OLDEST_SUPPORTED_INDEX_VERSION) return false;
 
     this.suspendPersist = true;
     try {
       for (const c of index.collections ?? []) this.collections.set(c.id, c);
-      for (const r of index.receipts ?? []) this.receipts.set(r.id, r);
+      for (const r of index.receipts ?? []) {
+        // v1 records predate tags and custom fields.
+        this.receipts.set(r.id, {
+          ...r,
+          tags: r.tags ?? [],
+          custom_fields: r.custom_fields ?? {},
+        });
+      }
       for (const a of index.attachments ?? []) this.attachments.set(a.id, a);
       for (const act of index.actions ?? []) this.actions.set(act.id, act);
+      for (const def of index.custom_field_definitions ?? []) {
+        this.customFields.set(def.id, def);
+      }
+      for (const draft of index.drafts ?? []) this.drafts.set(draft.id, draft);
       this.lastBackupTimestamp = index.last_backup_timestamp ?? null;
       this.recordsModifiedSinceBackup = index.records_modified_since_backup ?? 0;
     } finally {
       this.suspendPersist = false;
     }
+
+    // Write the upgraded shape back so the migration happens once, not on
+    // every launch.
+    const migrated = index.version < VAULT_INDEX_VERSION;
 
     // Collections shipped in a later version are added without disturbing
     // anything the user already has.
@@ -155,7 +189,7 @@ export class LocalReceiptVault {
         addedDefaults = true;
       }
     }
-    if (addedDefaults) this.persist();
+    if (addedDefaults || migrated) this.persist();
 
     return true;
   }
@@ -167,6 +201,8 @@ export class LocalReceiptVault {
       attachments: Array.from(this.attachments.values()),
       collections: Array.from(this.collections.values()),
       actions: Array.from(this.actions.values()),
+      custom_field_definitions: Array.from(this.customFields.values()),
+      drafts: Array.from(this.drafts.values()),
       last_backup_timestamp: this.lastBackupTimestamp,
       records_modified_since_backup: this.recordsModifiedSinceBackup,
     };
@@ -192,9 +228,10 @@ export class LocalReceiptVault {
   // --- Receipts CRUD ---
 
   public saveReceipt(
-    receipt: Omit<ReceiptRecord, "created_at" | "updated_at"> & {
+    receipt: Omit<ReceiptRecord, "created_at" | "updated_at" | "custom_fields"> & {
       created_at?: string;
       updated_at?: string;
+      custom_fields?: Record<string, string>;
     },
   ): ReceiptRecord {
     const now = new Date().toISOString();
@@ -202,6 +239,10 @@ export class LocalReceiptVault {
 
     const record: ReceiptRecord = {
       ...receipt,
+      // Omitting custom fields preserves what is already stored, so saving from
+      // a screen that has no custom-field UI cannot silently wipe them. Passing
+      // an explicit object replaces them.
+      custom_fields: receipt.custom_fields ?? existing?.custom_fields ?? {},
       created_at: existing ? existing.created_at : receipt.created_at || now,
       updated_at: now,
     };
@@ -365,6 +406,17 @@ export class LocalReceiptVault {
     this.commit();
   }
 
+  /**
+   * Writes an evidence file that no record points at yet.
+   *
+   * Used while capturing: the original is durable before the user has finished
+   * typing, so a process death leaves a file the recovered draft still refers
+   * to. `discardDraft` cleans it up if the capture is abandoned.
+   */
+  public stageFile(relativePath: string, bytes: Uint8Array): void {
+    this.store.writeAttachment(relativePath, bytes);
+  }
+
   public getAttachmentsForReceipt(receiptId: string): AttachmentRecord[] {
     return Array.from(this.attachments.values())
       .filter((a) => a.receipt_id === receiptId)
@@ -435,6 +487,154 @@ export class LocalReceiptVault {
     record.updated_at = new Date().toISOString();
     this.commit();
     return true;
+  }
+
+  // --- Tags ---
+
+  /** Every tag in use, with how many active receipts carry it. */
+  public listTags(): { tag: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const receipt of this.receipts.values()) {
+      if (receipt.is_trashed) continue;
+      for (const tag of receipt.tags) {
+        const key = tag.trim();
+        if (!key) continue;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  }
+
+  public setReceiptTags(receiptId: string, tags: string[]): boolean {
+    const record = this.receipts.get(receiptId);
+    if (!record) return false;
+    // Trimmed, de-duplicated case-insensitively, first spelling wins.
+    const seen = new Set<string>();
+    const cleaned: string[] = [];
+    for (const raw of tags) {
+      const tag = raw.trim();
+      if (!tag) continue;
+      const key = tag.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(tag);
+    }
+    record.tags = cleaned;
+    record.updated_at = new Date().toISOString();
+    this.commit();
+    return true;
+  }
+
+  // --- Custom fields ---
+
+  public listCustomFieldDefinitions(): CustomFieldDefinition[] {
+    return Array.from(this.customFields.values()).sort((a, b) =>
+      a.created_at.localeCompare(b.created_at),
+    );
+  }
+
+  public saveCustomFieldDefinition(definition: CustomFieldDefinition): void {
+    this.customFields.set(definition.id, definition);
+    this.commit();
+  }
+
+  /** Removes a definition and every stored value for it. */
+  public deleteCustomFieldDefinition(id: string): boolean {
+    if (!this.customFields.delete(id)) return false;
+    for (const receipt of this.receipts.values()) {
+      if (id in receipt.custom_fields) {
+        const { [id]: _removed, ...rest } = receipt.custom_fields;
+        receipt.custom_fields = rest;
+      }
+    }
+    this.commit();
+    return true;
+  }
+
+  public setReceiptCustomFields(receiptId: string, values: Record<string, string>): boolean {
+    const record = this.receipts.get(receiptId);
+    if (!record) return false;
+    const kept: Record<string, string> = {};
+    for (const [fieldId, value] of Object.entries(values)) {
+      // A value for a definition that no longer exists is dropped rather than
+      // kept as an orphan the UI can never show.
+      if (!this.customFields.has(fieldId)) continue;
+      const trimmed = value.trim();
+      if (trimmed) kept[fieldId] = trimmed;
+    }
+    record.custom_fields = kept;
+    record.updated_at = new Date().toISOString();
+    this.commit();
+    return true;
+  }
+
+  // --- Capture drafts ---
+
+  /**
+   * Persists an in-progress capture. Called as the user types, so a process
+   * death mid-capture does not lose the work or the original already written.
+   */
+  public saveDraft(draft: CaptureDraft): void {
+    this.drafts.set(draft.id, { ...draft, updated_at: new Date().toISOString() });
+    this.persist();
+  }
+
+  public listDrafts(): CaptureDraft[] {
+    return Array.from(this.drafts.values()).sort((a, b) =>
+      b.updated_at.localeCompare(a.updated_at),
+    );
+  }
+
+  public getDraft(id: string): CaptureDraft | null {
+    return this.drafts.get(id) ?? null;
+  }
+
+  /**
+   * Discards a draft. `keepAttachment` is false when the user abandons the
+   * capture, so the orphaned original is cleaned up with it.
+   */
+  public discardDraft(id: string, keepAttachment: boolean): boolean {
+    const draft = this.drafts.get(id);
+    if (!draft) return false;
+    if (!keepAttachment && draft.attachment_relative_path) {
+      this.store.deleteAttachment(draft.attachment_relative_path);
+    }
+    this.drafts.delete(id);
+    this.persist();
+    return true;
+  }
+
+  // --- Duplicate suggestions ---
+
+  private attachmentsByReceipt(): Map<string, AttachmentRecord[]> {
+    const index = new Map<string, AttachmentRecord[]>();
+    for (const attachment of this.attachments.values()) {
+      const list = index.get(attachment.receipt_id);
+      if (list) list.push(attachment);
+      else index.set(attachment.receipt_id, [attachment]);
+    }
+    return index;
+  }
+
+  /** Possible duplicates of one receipt. Suggestions only; nothing is deleted. */
+  public findDuplicatesOf(receiptId: string): DuplicateSuggestion[] {
+    const receipt = this.receipts.get(receiptId);
+    if (!receipt) return [];
+    return findDuplicateSuggestions(
+      receipt,
+      Array.from(this.receipts.values()),
+      this.attachmentsByReceipt(),
+    );
+  }
+
+  /** Every duplicate pair in the vault, strongest evidence first. */
+  public findAllDuplicates(): DuplicateSuggestion[] {
+    return findAllDuplicateSuggestions(
+      Array.from(this.receipts.values()),
+      this.attachmentsByReceipt(),
+    );
   }
 
   // --- Actions & Deadlines ---
@@ -512,6 +712,7 @@ export class LocalReceiptVault {
       attachments: Array.from(this.attachments.values()),
       collections: Array.from(this.collections.values()),
       actions: Array.from(this.actions.values()),
+      custom_field_definitions: Array.from(this.customFields.values()),
       files: filesRecord,
     };
   }
@@ -530,6 +731,7 @@ export class LocalReceiptVault {
         this.attachments.clear();
         this.collections.clear();
         this.actions.clear();
+        this.customFields.clear();
       }
 
       for (const c of payload.collections) {
@@ -543,6 +745,9 @@ export class LocalReceiptVault {
       }
       for (const act of payload.actions) {
         this.actions.set(act.id, act);
+      }
+      for (const def of payload.custom_field_definitions ?? []) {
+        this.customFields.set(def.id, def);
       }
       for (const [path, bytes] of Object.entries(payload.files)) {
         this.store.writeAttachment(path, bytes);

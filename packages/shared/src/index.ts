@@ -11,6 +11,9 @@ export * from "./local-pilot/assistant-engine";
 export * from "./local-pilot/backup-encryption";
 export * from "./local-pilot/local-vault";
 export * from "./local-pilot/vault-storage";
+export * from "./local-pilot/local-reports";
+export * from "./local-pilot/duplicate-detection";
+export * from "./local-pilot/local-encryption";
 
 /** Supported locales. Rule 5: 'en' and 'fil' only — no other locale is supported. */
 export const SUPPORTED_LOCALES = ["en", "fil"] as const;

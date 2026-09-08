@@ -18,6 +18,7 @@ import { StorageBackupScreen } from "./src/screens/StorageBackupScreen";
 import { AskKeeptrailScreen } from "./src/screens/AskKeeptrailScreen";
 import { CaptureModal } from "./src/screens/CaptureModal";
 import { OnboardingModal } from "./src/screens/OnboardingModal";
+import { VaultFailureScreen, VaultLoadingScreen } from "./src/screens/VaultBootScreens";
 import { haptics } from "./src/utils/haptics";
 
 const ONBOARDING_KEY = "keeptrail.onboarding.completedVersion";
@@ -220,7 +221,10 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <VaultProvider>
+        <VaultProvider
+          renderLoading={() => <VaultLoadingScreen />}
+          renderFailure={(message) => <VaultFailureScreen message={message} />}
+        >
           <SnackbarProvider>
             <MainApp />
           </SnackbarProvider>
